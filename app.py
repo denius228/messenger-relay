@@ -139,7 +139,13 @@ def send():
     if not session.get('auth'): return "No Auth", 403
     target = request.form.get('target_ip').replace('https://','').replace('http://','').strip('/')
     content = request.form.get('content')
-    my_id = request.host
+    
+    # --- НОВОЕ: Берем наш настоящий Cloudflare-ID из браузера ---
+    my_id = request.form.get('my_id')
+    if not my_id:
+        my_id = request.host # Запасной вариант
+    my_id = my_id.replace('https://','').replace('http://','').strip('/')
+    # -------------------------------------------------------------
     
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()

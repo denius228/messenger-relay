@@ -269,7 +269,8 @@
             const resp = await fetch('/send_message', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: `target_ip=${activeContact.ip}&content=${encodeURIComponent(content)}`
+                // НОВОЕ: Мы передаем my_id=${myHost} нашему серверу
+                body: `target_ip=${activeContact.ip}&content=${encodeURIComponent(content)}&my_id=${myHost}`
             });
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
