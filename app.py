@@ -1,4 +1,4 @@
-import sys, os, sqlite3, datetime, uuid, requests
+import sys, os, sqlite3, datetime, uuid, requests, time, threading
 from flask import Flask, request, jsonify, session, redirect, url_for, send_from_directory, render_template
 from flask_cors import CORS
 
@@ -11,10 +11,28 @@ app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024 # Лимит 30MB
 
 USER_PASSWORD = "123" 
 
+# --- НОВАЯ ФУНКЦИЯ: Очистка старых медиафайлов (старше 7 дней) ---
+def cleanup_old_files():
+    while True:
+        now = time.time()
+        for filename in os.listdir(UPLOAD_FOLDER):
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            # 604800 секунд = 7 дней
+            if os.path.isfile(filepath) and os.stat(filepath).st_mtime < now - 604800:
+                try:
+                    os.remove(filepath)
+                    print(f"Удален старый файл: {filename}")
+                except Exception as e:
+                    pass
+        time.sleep(86400) # Проверять раз в сутки (86400 сек)
+
+# Запускаем очистку в фоновом режиме при старте сервера
+threading.Thread(target=cleanup_old_files, daemon=True).start()
+# ---------------------------------------------------------------
+
 def init_db():
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    # ИЗМЕНЕНИЕ 1: Добавили столбец chat_with для изоляции переписок
     c.execute('CREATE TABLE IF NOT EXISTS msgs (chat_with TEXT, sender TEXT, content TEXT, timestamp TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS contacts (name TEXT, ip TEXT, secret_key TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS mailbox (target_id TEXT, sender_id TEXT, content TEXT, timestamp TEXT)')
@@ -23,7 +41,6 @@ def init_db():
 
 @app.route('/')
 def index():
-    # ИЗМЕНЕНИЕ 2: Теперь мы грузим HTML из отдельного файла
     return render_template('index.html', logged_in=session.get('auth'))
 
 @app.route('/uploads/<path:filename>')
@@ -51,7 +68,6 @@ def manage_contacts():
     c = conn.cursor()
     if request.method == 'POST':
         d = request.json
-        # Очищаем IP от лишнего при сохранении
         clean_ip = d['ip'].replace('https://','').replace('http://','').strip('/')
         c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (d['name'], clean_ip, d['key']))
         conn.commit()
@@ -63,7 +79,7 @@ def manage_contacts():
 @app.route('/api/messages')
 def get_messages():
     if not session.get('auth'): return jsonify([])
-    chat_with = request.args.get('chat_with') # ИЗМЕНЕНИЕ 3: Запрашиваем сообщения только с конкретным контактом
+    chat_with = request.args.get('chat_with')
     if not chat_with: return jsonify([])
     
     conn = sqlite3.connect('messages.db')
@@ -75,7 +91,6 @@ def get_messages():
 
 @app.route('/api/mailbox/check')
 def check_mailbox():
-    # ИЗМЕНЕНИЕ 4: Сервер друга теперь НЕ забирает твои письма себе в базу. Он просто их отдает и удаляет.
     tid = request.args.get('target_id')
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
@@ -89,12 +104,11 @@ def check_mailbox():
 
 @app.route('/api/messages/save_synced', methods=['POST'])
 def save_synced():
-    # ИЗМЕНЕНИЕ 5: Новый эндпоинт. Твой клиент сохраняет письма, полученные из чужого ящика, в ТВОЮ базу.
     if not session.get('auth'): return "No Auth", 403
     data = request.json.get('messages', [])
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    for m in data: # m = [sender_id, content, timestamp]
+    for m in data:
         c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[0], m[1], m[2]))
     conn.commit()
     conn.close()
@@ -104,10 +118,17 @@ def save_synced():
 def receive():
     data = request.json
     sender = data.get('sender')
-    content = data.get('content')
+    
+    # --- АНТИ-СПАМ: Проверяем, есть ли отправитель в нашей записной книжке ---
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    # Записываем: с кем чат (sender), кто отправил (sender), контент, время
+    c.execute("SELECT ip FROM contacts WHERE ip = ?", (sender,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({"error": "Who are you? Connection rejected."}), 403
+    # ------------------------------------------------------------------------
+
+    content = data.get('content')
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (sender, sender, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     conn.close()
@@ -122,7 +143,6 @@ def send():
     
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    # Записываем: с кем чат (target), кто отправил ("Me"), контент, время
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target, "Me", content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     conn.close()
