@@ -117,18 +117,19 @@ def save_synced():
 @app.route('/receive', methods=['POST'])
 def receive():
     data = request.json
-    sender = data.get('sender')
+    # Очищаем ID отправителя от портов на всякий случай
+    sender = data.get('sender', '').split(':')[0] 
+    content = data.get('content')
     
-    # --- АНТИ-СПАМ: Проверяем, есть ли отправитель в нашей записной книжке ---
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
     c.execute("SELECT ip FROM contacts WHERE ip = ?", (sender,))
     if not c.fetchone():
         conn.close()
-        return jsonify({"error": "Who are you? Connection rejected."}), 403
-    # ------------------------------------------------------------------------
+        print(f"❌ СПАМ БЛОК: {sender} попытался написать, но его нет в контактах!")
+        return jsonify({"error": "Who are you?"}), 403
 
-    content = data.get('content')
+    print(f"✅ ПОЛУЧЕНО СООБЩЕНИЕ ОТ {sender}!")
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (sender, sender, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     conn.close()

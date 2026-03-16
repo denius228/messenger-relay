@@ -92,7 +92,7 @@
         let contactMap = {};
         let mediaRecorder;
         let audioChunks = [];
-        const myHost = window.location.host;
+        const myHost = window.location.hostname; // hostname никогда не содержит порт!
         let html5QrcodeScanner = null;
 
         function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
