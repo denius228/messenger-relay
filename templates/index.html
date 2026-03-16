@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Secure Voice Messenger</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <!-- Добавляем библиотеки для QR-кодов -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body { font-family: sans-serif; background: #0e1621; color: white; margin: 0; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
         .header { background: #17212b; padding: 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #111; display: flex; justify-content: space-between; align-items: center; }
+        .btn-small { background: #2b5278; color: white; border: none; padding: 5px 10px; border-radius: 10px; cursor: pointer; font-size: 12px; }
         #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; }
         #contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; }
         .contact-card { background: #242f3d; padding: 10px 18px; border-radius: 20px; cursor: pointer; font-size: 14px; white-space: nowrap; border: 1px solid transparent; }
@@ -25,8 +29,10 @@
         button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; }
         .recording-active { animation: pulse-red 1s infinite; }
         @keyframes pulse-red { 0% {color: #40a7e3} 50% {color: red} 100% {color: #40a7e3} }
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; }
-        .modal input { width: 92%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; text-align: center; }
+        .modal input { width: 92%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
+        #qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
+        #reader { width: 100%; margin-bottom: 15px; border-radius: 10px; overflow: hidden; }
     </style>
 </head>
 <body>
@@ -39,7 +45,11 @@
             </form>
         </div>
     {% else %}
-        <div class="header"><span>SECURE CHAT</span> <button onclick="document.getElementById('add-modal').style.display='block'">+ CONTACT</button></div>
+        <div class="header">
+            <button class="btn-small" onclick="showProfile()">PROFILE</button>
+            <span>SECURE CHAT</span> 
+            <button class="btn-small" onclick="document.getElementById('add-modal').style.display='block'">+ ADD</button>
+        </div>
         <div id="status-bar">HI-FI SYSTEM READY</div>
         <div id="contact-list"></div>
         <div id="chat"></div>
@@ -52,13 +62,27 @@
             </div>
             <button onclick="sendText()">></button>
         </div>
+
+        <!-- Модалка добавления контакта -->
         <div id="add-modal" class="modal">
             <h3>Add Contact</h3>
+            <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px;">📷 SCAN QR CODE</button>
+            <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Name">
             <input type="text" id="new-ip" placeholder="URL (no https)">
             <input type="text" id="new-key" placeholder="Key">
-            <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border:none; border-radius:12px; width:100%;">SAVE</button>
-            <button onclick="document.getElementById('add-modal').style.display='none'" style="width:100%; color:gray; background:none; border:none; margin-top:10px;">CANCEL</button>
+            <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px;">SAVE</button>
+            <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px;">CANCEL</button>
+        </div>
+
+        <!-- Модалка моего профиля -->
+        <div id="profile-modal" class="modal">
+            <h3>My Profile</h3>
+            <p style="font-size:12px; color:gray;">Show this QR to your friend</p>
+            <div id="qr-code"></div>
+            <input type="text" id="my-secret-key" placeholder="Create a Secret Key">
+            <button onclick="generateQR()" style="background:#40a7e3; color:white; padding:10px; border-radius:10px; width:100%; font-size:14px;">UPDATE QR</button>
+            <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px;">CLOSE</button>
         </div>
     {% endif %}
 
@@ -69,6 +93,7 @@
         let mediaRecorder;
         let audioChunks = [];
         const myHost = window.location.host;
+        let html5QrcodeScanner = null;
 
         function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
         function decrypt(cipherText, key) {
@@ -77,6 +102,59 @@
         }
 
         function setStatus(text) { document.getElementById('status-bar').innerText = text.toUpperCase(); }
+
+        // --- ЛОГИКА QR-КОДОВ ---
+        function showProfile() {
+            document.getElementById('profile-modal').style.display = 'block';
+            if(!document.getElementById('my-secret-key').value) {
+                document.getElementById('my-secret-key').value = Math.random().toString(36).substring(2, 10);
+            }
+            generateQR();
+        }
+
+        function generateQR() {
+            document.getElementById('qr-code').innerHTML = "";
+            const key = document.getElementById('my-secret-key').value;
+            const data = JSON.stringify({ ip: myHost, key: key });
+            new QRCode(document.getElementById("qr-code"), {
+                text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff"
+            });
+        }
+
+        function startScanner() {
+            if(html5QrcodeScanner) return;
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start(
+                { facingMode: "environment" }, { fps: 10, qrbox: { width: 200, height: 200 } },
+                (decodedText) => {
+                    try {
+                        const data = JSON.parse(decodedText);
+                        document.getElementById('new-ip').value = data.ip;
+                        document.getElementById('new-key').value = data.key;
+                        document.getElementById('new-name').focus();
+                        stopScanner();
+                        setStatus("QR SCANNED!");
+                    } catch(e) { alert("Invalid QR Code"); }
+                },
+                (err) => {}
+            );
+        }
+
+        function stopScanner() {
+            if(html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    html5QrcodeScanner.clear();
+                    html5QrcodeScanner = null;
+                });
+            }
+        }
+
+        function closeModals() {
+            document.getElementById('add-modal').style.display = 'none';
+            document.getElementById('profile-modal').style.display = 'none';
+            stopScanner();
+        }
+        // ------------------------
 
         async function displayMedia(url, elementId, key) {
             try {
@@ -87,9 +165,7 @@
                 if (el) {
                     el.onload = () => {
                         const chat = document.getElementById('chat');
-                        if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) {
-                            chat.scrollTop = chat.scrollHeight;
-                        }
+                        if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
                     };
                     el.src = decryptedData;
                 }
@@ -102,7 +178,7 @@
             const list = document.getElementById('contact-list');
             contactMap = {};
             list.innerHTML = contacts.map(c => {
-                const cleanIp = c[1]; // Теперь в БД хранится чистый IP
+                const cleanIp = c[1];
                 contactMap[cleanIp] = c[0];
                 return `<div class="contact-card ${activeContact?.ip === cleanIp ? 'active' : ''}" onclick="selectContact('${c[0]}', '${cleanIp}', '${c[2]}')">${c[0]}</div>`;
             }).join('');
@@ -127,16 +203,13 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({name, ip, key})
             });
-            document.getElementById('add-modal').style.display = 'none';
-            document.getElementById('new-name').value = '';
-            document.getElementById('new-ip').value = '';
-            document.getElementById('new-key').value = '';
+            closeModals();
+            document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-key').value = '';
             loadContacts();
         }
 
         async function loadMessages() {
             if (!activeContact) return;
-            // ИЗМЕНЕНИЕ: Теперь мы просим сообщения ТОЛЬКО для активного чата
             const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.ip));
             const messages = await resp.json();
             const chat = document.getElementById('chat');
@@ -145,7 +218,7 @@
             const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 80;
             let html = "";
             for (let m of messages) {
-                const isOut = (m[0] === 'Me'); // m[0] это sender
+                const isOut = (m[0] === 'Me');
                 let text = decrypt(m[1], activeContact.key);
                 let content = text;
                 const mediaId = "m" + Math.random().toString(36).substr(2, 7);
@@ -207,29 +280,12 @@
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            echoCancellation: false,  
-                            noiseSuppression: false, 
-                            autoGainControl: true,   
-                            sampleRate: 44100,       
-                            channelCount: 1          
-                        }
-                    });
-                    
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 44100, channelCount: 1 } });
                     let mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-                    
-                    mediaRecorder = new MediaRecorder(stream, { 
-                        mimeType: mimeType, 
-                        audioBitsPerSecond: 256000 
-                    });
-                    
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType, audioBitsPerSecond: 256000 });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-                    mediaRecorder.onstop = () => {
-                        uploadMedia(new Blob(audioChunks, {type: mimeType}));
-                        stream.getTracks().forEach(t => t.stop());
-                    };
+                    mediaRecorder.onstop = () => { uploadMedia(new Blob(audioChunks, {type: mimeType})); stream.getTracks().forEach(t => t.stop()); };
                     mediaRecorder.start();
                     btn.classList.add('recording-active');
                     setStatus("Hi-Fi Recording...");
@@ -251,10 +307,8 @@
                     const mailResp = await fetch(`https://${friendHost}/api/mailbox/check?target_id=${myHost}`);
                     const data = await mailResp.json();
                     if (data.received > 0) { 
-                        // ИЗМЕНЕНИЕ: Отправляем полученные письма на СВОЙ сервер для сохранения
                         await fetch('/api/messages/save_synced', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({messages: data.messages})
                         });
                         setStatus("New Mail Sync!"); 
