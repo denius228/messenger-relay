@@ -197,10 +197,20 @@ def send():
     
     try:
         url = f"https://{target}/receive"
+        print(f"🚀 Отправляю на: {url}")
+        print(f"📦 Данные: sender={my_id}, target={target_username}")
+        
         resp = requests.post(url, json={"sender": my_id, "target": target_username, "content": content}, timeout=10)
-        if resp.status_code == 200: return "OK"
-        raise Exception()
-    except:
+        
+        if resp.status_code == 200: 
+            print("✅ Успешно доставлено напрямую!")
+            return "OK"
+            
+        print(f"❌ Ошибка доставки: Сервер ответил {resp.status_code} - {resp.text}")
+        raise Exception(f"Status: {resp.status_code}")
+        
+    except Exception as e:
+        print(f"⚠️ Сохранено в Mailbox. Причина: {e}")
         conn = sqlite3.connect('messages.db')
         c = conn.cursor()
         c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_id, content, datetime.datetime.now().strftime("%H:%M")))

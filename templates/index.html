@@ -400,14 +400,20 @@
         async function postMsg(content) {
             setStatus("Locating...");
             
-            // 1. Ищем в Трекере (по никнейму)
+            // Если мы общаемся внутри одного сервера (через Трекер)
             let targetUrl = await getFriendUrl(activeContact.username);
             
-            // 2. Если Трекер не знает, берем URL из нашей записной книжки (contactMap или IP)
+            // Если Трекер не знает друга (Федерация)
             if (!targetUrl) {
-                // activeContact.username сейчас хранит IP (URL), если мы ввели его при добавлении
-                targetUrl = activeContact.username; 
+                // ВАЖНО: Мы должны брать IP (URL) из базы контактов, а не имя!
+                // Когда мы загружаем контакты (loadContacts), c[1] - это URL.
+                // Нам нужно найти этот URL в нашей локальной копии списка:
+                const contactData = Object.entries(contactMap).find(([ip, name]) => name === activeContact.username);
+                if (contactData) {
+                    targetUrl = contactData[0]; // Берем IP/URL
+                }
             }
+            
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
