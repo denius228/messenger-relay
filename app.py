@@ -12,37 +12,18 @@ app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
 
 USER_PASSWORD = "123"
 
-# --- VAPID КЛЮЧИ ДЛЯ ПУШ-УВЕДОМЛЕНИЙ (Сгенерированы для Secure Chat) ---
-VAPID_PUBLIC_KEY = "BMTtV7FwB1Vp_7J1gJ7Z_R9HwT0aJ-Z9J9wV_T-Q-J9xW_P-R_Z9J9wV_T-Q-J9xW_P-R_Z9J9wV_T-Q-J9xW_M"
-# Для безопасности в реальном Production приватный ключ хранят в переменных окружения
-VAPID_PRIVATE_KEY = "Tr_0xJ-Z9J9wV_T-Q-J9xW_P-R_Z9J9wV_T-Q-J9xW_M" 
-VAPID_CLAIMS = {"sub": "mailto:admin@eprobot.ru"}
-# (Примечание: это болванки ключей, библиотека pywebpush сама сгенерирует настоящие ключи при первом запуске ниже!)
-# ----------------------------------------------------------------------
-
-# Автогенерация настоящих ключей при первом запуске
-if not os.path.exists("vapid_private.pem"):
-    os.system("vapid --generate-keys > vapid_keys.txt")
-    try:
-        with open("vapid_keys.txt", "r") as f:
-            lines = f.readlines()
-            # Простой парсер для pywebpush CLI
-            pass 
-    except: pass
-
-# Используем жестко заданные ключи (сгенерированы валидным алгоритмом ES256)
+# VAPID Ключи для Push
 VAPID_PRIVATE_KEY = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfXU1oX7B_3bZ3z_X9_9_9_9_9_9_9_9_9_9_9_9_9_9hRANCAAS_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9"
 VAPID_PUBLIC_KEY = "BDkXf5b_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9"
 
-# Используем сторонний генератор для надежности. Замените этот блок на генерацию при старте:
 try:
     from pywebpush import webpush, WebPushException
     import ecdsa
-    private_key = ecdsa.SigningKey.generate(curve=ecdsa.NIST256p)
-    VAPID_PRIVATE_KEY = private_key.to_pem().decode('utf-8')
-    VAPID_PUBLIC_KEY = private_key.get_verifying_key().to_pem().decode('utf-8')
-except:
-    pass # Flask server will run even without it
+    if not os.path.exists("vapid_private.pem"):
+        private_key = ecdsa.SigningKey.generate(curve=ecdsa.NIST256p)
+        VAPID_PRIVATE_KEY = private_key.to_pem().decode('utf-8')
+        VAPID_PUBLIC_KEY = private_key.get_verifying_key().to_pem().decode('utf-8')
+except: pass
 
 def cleanup_old_files():
     while True:
@@ -63,33 +44,24 @@ def init_db():
     c.execute('CREATE TABLE IF NOT EXISTS contacts (name TEXT, ip TEXT, secret_key TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS mailbox (target_id TEXT, sender_id TEXT, content TEXT, timestamp TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS tracker (username TEXT PRIMARY KEY, current_url TEXT, last_seen TEXT)')
-    
-    # НОВАЯ ТАБЛИЦА: Подписки на Push-уведомления
     c.execute('CREATE TABLE IF NOT EXISTS push_subs (username TEXT PRIMARY KEY, sub_json TEXT)')
-    
     conn.commit()
     conn.close()
 
-# Раздаем Service Worker из корня сайта (важно для прав доступа)
 @app.route('/sw.js')
-def serve_sw():
-    return app.send_static_file('sw.js')
+def serve_sw(): return app.send_static_file('sw.js')
 
 @app.route('/')
-def index():
-    # Передаем публичный ключ во Frontend
-    return render_template('index.html', logged_in=session.get('auth'), vapid_public_key="BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuB-5-cEnEaAkmO2hHn1k_fNzc")
+def index(): return render_template('index.html', logged_in=session.get('auth'), vapid_public_key="BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuB-5-cEnEaAkmO2hHn1k_fNzc")
 
 @app.route('/uploads/<path:filename>')
-def download_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+def download_file(filename): return send_from_directory(UPLOAD_FOLDER, filename)
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     data = request.json['data']
     filename = str(uuid.uuid4()) + ".enc"
-    with open(os.path.join(UPLOAD_FOLDER, filename), 'w') as f:
-        f.write(data)
+    with open(os.path.join(UPLOAD_FOLDER, filename), 'w') as f: f.write(data)
     return jsonify({"url": f"/uploads/{filename}"})
 
 @app.route('/login', methods=['POST'])
@@ -104,8 +76,7 @@ def update_tracker():
     url = data.get('url').replace('https://','').replace('http://','').strip('/')
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    c.execute("REPLACE INTO tracker (username, current_url, last_seen) VALUES (?, ?, ?)", 
-              (username, url, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    c.execute("REPLACE INTO tracker (username, current_url, last_seen) VALUES (?, ?, ?)", (username, url, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
     return jsonify({"status": "updated"})
@@ -121,13 +92,11 @@ def get_tracker():
     if row: return jsonify({"url": row[0]})
     return jsonify({"error": "not found"}), 404
 
-# --- API ПОДПИСКИ НА PUSH ---
 @app.route('/api/push/subscribe', methods=['POST'])
 def push_subscribe():
     data = request.json
     username = data.get('username')
     sub_json = json.dumps(data.get('subscription'))
-    
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
     c.execute("REPLACE INTO push_subs (username, sub_json) VALUES (?, ?)", (username, sub_json))
@@ -135,7 +104,6 @@ def push_subscribe():
     conn.close()
     return jsonify({"status": "subscribed"})
 
-# --- ОТПРАВКА УВЕДОМЛЕНИЯ ПРИ ПОЛУЧЕНИИ ---
 def send_push_notification(target_username, sender_username):
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
@@ -148,23 +116,18 @@ def send_push_notification(target_username, sender_username):
             subscription_info = json.loads(row[0])
             webpush(
                 subscription_info=subscription_info,
-                data=json.dumps({
-                    "title": "Secure Chat",
-                    "body": f"Новое сообщение от {sender_username} 🔒"
-                }),
-                vapid_private_key="3KZv5MwX_1TzgY0pM-89-p21-z5-49-14-9-5", # Секретный ключ (сгенерирован)
+                data=json.dumps({"title": "Secure Chat", "body": f"Новое сообщение от {sender_username} 🔒"}),
+                vapid_private_key="3KZv5MwX_1TzgY0pM-89-p21-z5-49-14-9-5",
                 vapid_claims={"sub": "mailto:admin@eprobot.ru"}
             )
             print(f"🔔 Push отправлен пользователю {target_username}")
-        except WebPushException as ex:
-            print("Push failed:", repr(ex))
-        except Exception as e:
-            print("Push error:", e)
+        except Exception as e: print("Push error:", e)
 
 @app.route('/receive', methods=['POST'])
 def receive():
     data = request.json
     sender = data.get('sender', '').split(':')[0]
+    target = data.get('target') # ИСПРАВЛЕНИЕ: Получаем Никнейм получателя
     content = data.get('content')
     
     conn = sqlite3.connect('messages.db')
@@ -178,9 +141,9 @@ def receive():
     conn.commit()
     conn.close()
     
-    # 🔔 ЗАПУСКАЕМ PUSH-УВЕДОМЛЕНИЕ
-    # Чтобы узнать кому пуш, нам нужен наш локальный никнейм (Трекер это знает)
-    # Для простоты: мы отправляем пуш "Себе" при входящем сообщении от друга
+    # ИСПРАВЛЕНИЕ: ВЫЗЫВАЕМ ФУНКЦИЮ PUSH-УВЕДОМЛЕНИЯ!
+    if target: send_push_notification(target, sender)
+        
     return jsonify({"status": "delivered"}), 200
 
 @app.route('/send_message', methods=['POST'])
@@ -202,7 +165,8 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        resp = requests.post(url, json={"sender": my_id, "content": content}, timeout=10)
+        # ИСПРАВЛЕНИЕ: Передаем target серверу, чтобы он знал кому слать пуш!
+        resp = requests.post(url, json={"sender": my_id, "target": target_username, "content": content}, timeout=10)
         if resp.status_code == 200: return "OK"
         raise Exception()
     except:

@@ -25,11 +25,9 @@
         .msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
-        
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 150px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
-        
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; }
@@ -98,11 +96,46 @@
         let contactMap = {};
         let mediaRecorder;
         let audioChunks = [];
-        let audioCtx; // Контекст аудио для усилителя
+        let audioCtx;
         const myHost = window.location.hostname; 
         let html5QrcodeScanner = null;
-
         let myUsername = localStorage.getItem('my_username') || "";
+
+        const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+            return outputArray;
+        }
+
+        async function enablePush() {
+            if (!myUsername) return alert("Сначала создайте Profile!");
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) return alert("Push не поддерживается");
+
+            try {
+                const registration = await navigator.serviceWorker.register('/sw.js');
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') return alert("Уведомления заблокированы.");
+
+                const subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+                });
+
+                await fetch('/api/push/subscribe', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username: myUsername, subscription: subscription })
+                });
+
+                document.getElementById('push-btn').style.background = "#4CAF50";
+                localStorage.setItem('push_enabled', 'true');
+                alert("Push ВКЛЮЧЕНЫ! 🔔");
+            } catch (error) { alert("Ошибка Push: " + error.message); }
+        }
 
         function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
         function decrypt(cipherText, key) {
@@ -114,13 +147,7 @@
 
         async function pingTracker() {
             if (!myUsername) return;
-            try {
-                await fetch(`/api/tracker/update`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username: myUsername, url: myHost })
-                });
-            } catch(e) {}
+            try { await fetch(`/api/tracker/update`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: myUsername, url: myHost }) }); } catch(e) {}
         }
 
         async function getFriendUrl(friendUsername) {
@@ -135,9 +162,7 @@
         function showProfile() {
             document.getElementById('profile-modal').style.display = 'block';
             document.getElementById('my-username').value = myUsername;
-            if(!document.getElementById('my-secret-key').value) {
-                document.getElementById('my-secret-key').value = localStorage.getItem('my_key') || "7777";
-            }
+            if(!document.getElementById('my-secret-key').value) document.getElementById('my-secret-key').value = localStorage.getItem('my_key') || "7777";
             if (myUsername) generateQR();
         }
 
@@ -156,9 +181,7 @@
             document.getElementById('qr-code').innerHTML = "";
             const key = document.getElementById('my-secret-key').value;
             const data = JSON.stringify({ username: myUsername, key: key });
-            new QRCode(document.getElementById("qr-code"), {
-                text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff"
-            });
+            new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
         }
 
         function startScanner() {
@@ -179,9 +202,7 @@
             );
         }
 
-        function stopScanner() {
-            if(html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); html5QrcodeScanner = null; }); }
-        }
+        function stopScanner() { if(html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); html5QrcodeScanner = null; }); } }
 
         function closeModals() {
             document.getElementById('add-modal').style.display = 'none';
@@ -225,7 +246,7 @@
             if (activeContact?.name === name) return;
             activeContact = {name, username: name, key};
             lastMessageCount = 0;
-            document.getElementById('chat').innerHTML = ""; // Очищаем чат при смене контакта
+            document.getElementById('chat').innerHTML = ""; 
             loadMessages();
             loadContacts();
         }
@@ -234,10 +255,8 @@
             const username = document.getElementById('new-name').value.trim();
             const key = document.getElementById('new-key').value.trim();
             if(!username || !key) return alert("Fill all fields");
-            
             await fetch('/api/contacts', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({name: username, ip: username, key: key})
             });
             closeModals();
@@ -245,7 +264,6 @@
             loadContacts();
         }
 
-        // === ИСПРАВЛЕНО: ЧАТ БОЛЬШЕ НЕ ПРЫГАЕТ (Умное добавление сообщений) ===
         async function loadMessages() {
             if (!activeContact) return;
             const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
@@ -260,7 +278,6 @@
 
             const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 100;
             
-            // Добавляем ТОЛЬКО новые сообщения (не трогаем старые картинки)
             for (let i = lastMessageCount; i < messages.length; i++) {
                 let m = messages[i];
                 const isOut = (m[0] === 'Me');
@@ -268,24 +285,27 @@
                 let content = text;
                 const mediaId = "m" + Math.random().toString(36).substr(2, 7);
 
+                let isMedia = false;
                 if (text.startsWith("IMG:")) {
-                    content = `<img id="${mediaId}" src="" alt="Loading...">`;
-                    displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
+                    content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
+                    isMedia = true;
                 } else if (text.startsWith("VOICE:")) {
                     content = `<audio id="${mediaId}" controls src=""></audio>`;
-                    displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
+                    isMedia = true;
                 }
                 
                 let div = document.createElement('div');
                 div.className = `msg ${isOut ? 'out' : 'in'}`;
                 div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                 chat.appendChild(div);
+                
+                // ИСПРАВЛЕНИЕ БАГА: Вызываем расшифровку ТОЛЬКО ПОСЛЕ того, как добавили тег на экран!
+                if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
+                else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
             }
             
             lastMessageCount = messages.length;
-            if (isAtBottom || messages.length > lastMessageCount) {
-                setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
-            }
+            if (isAtBottom || messages.length > lastMessageCount) setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
         }
 
         async function sendText() {
@@ -303,9 +323,7 @@
             reader.onload = async (e) => {
                 const encrypted = encrypt(e.target.result, activeContact.key);
                 const resp = await fetch('/api/upload', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ data: encrypted })
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: encrypted })
                 });
                 const { url } = await resp.json();
                 const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
@@ -322,8 +340,7 @@
 
             setStatus("Sending...");
             const resp = await fetch('/send_message', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                 body: `target_ip=${currentFriendUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
             });
             const resText = await resp.text();
@@ -331,45 +348,32 @@
             loadMessages();
         }
 
-        // === ИСПРАВЛЕНО: УСИЛИТЕЛЬ ЗВУКА ДЛЯ ТЕЛЕФОНОВ (Громкость +300%) ===
         async function toggleVoice() {
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ 
-                        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 48000, channelCount: 1 } 
-                    });
-                    
-                    // Создаем Виртуальный Усилитель (GainNode)
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 48000, channelCount: 1 } });
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                     const source = audioCtx.createMediaStreamSource(stream);
                     const gainNode = audioCtx.createGain();
-                    gainNode.gain.value = 3.0; // УВЕЛИЧИВАЕМ ГРОМКОСТЬ В 3 РАЗА!
+                    gainNode.gain.value = 3.0; 
                     const destination = audioCtx.createMediaStreamDestination();
-                    
                     source.connect(gainNode);
                     gainNode.connect(destination);
                     const boostedStream = destination.stream;
-                    // ------------------------------------
 
                     let mimeType = '';
                     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
                     else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
-                    // Записываем УСИЛЕННЫЙ поток
-                    mediaRecorder = new MediaRecorder(boostedStream, { 
-                        mimeType: mimeType, 
-                        audioBitsPerSecond: 256000 
-                    });
-                    
+                    mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 256000 });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                     mediaRecorder.onstop = () => { 
                         uploadMedia(new Blob(audioChunks, {type: mimeType})); 
-                        stream.getTracks().forEach(t => t.stop()); // Отключаем микрофон
-                        if (audioCtx.state !== 'closed') audioCtx.close(); // Очищаем память
+                        stream.getTracks().forEach(t => t.stop()); 
+                        if (audioCtx.state !== 'closed') audioCtx.close();
                     };
-                    
                     mediaRecorder.start();
                     btn.classList.add('recording-active');
                     setStatus("Hi-Fi Recording...");
@@ -412,62 +416,7 @@
         if (document.getElementById('contact-list')) {
             loadContacts();
             setTimeout(pingTracker, 2000);
-        }
-
-        const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
-
-        function urlBase64ToUint8Array(base64String) {
-            const padding = '='.repeat((4 - base64String.length % 4) % 4);
-            const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-            const rawData = window.atob(base64);
-            const outputArray = new Uint8Array(rawData.length);
-            for (let i = 0; i < rawData.length; ++i) {
-                outputArray[i] = rawData.charCodeAt(i);
-            }
-            return outputArray;
-        }
-
-        async function enablePush() {
-            if (!myUsername) return alert("Сначала создайте Profile (My Username)!");
-            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                alert("Push-уведомления не поддерживаются вашим браузером (iOS требует добавления PWA на экран)");
-                return;
-            }
-
-            try {
-                // Регистрируем Service Worker
-                const registration = await navigator.serviceWorker.register('/sw.js');
-                
-                // Спрашиваем разрешение у пользователя
-                const permission = await Notification.requestPermission();
-                if (permission !== 'granted') {
-                    alert("Вы заблокировали уведомления.");
-                    return;
-                }
-
-                // Подписываемся на пуши
-                const subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-                });
-
-                // Отправляем подписку на наш сервер
-                await fetch('/api/push/subscribe', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        username: myUsername,
-                        subscription: subscription
-                    })
-                });
-
-                document.getElementById('push-btn').style.background = "#4CAF50"; // Зеленая кнопка
-                alert("Push-уведомления УСПЕШНО ВКЛЮЧЕНЫ! 🔔");
-                
-            } catch (error) {
-                console.error("Push Error:", error);
-                alert("Ошибка Push: " + error.message);
-            }
+            if (localStorage.getItem('push_enabled') === 'true') document.getElementById('push-btn').style.background = "#4CAF50";
         }
     </script>
 </body>
