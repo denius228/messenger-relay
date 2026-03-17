@@ -154,9 +154,10 @@ def send_push_notification(target_username, sender_username):
                 vapid_private_key=VAPID_PRIVATE_PEM,
                 vapid_claims={"sub": "mailto:admin@eprobot.ru"},
                 ttl=86400,
-                headers={"Urgency": "high", "Topic": "new-message"}
+                # УБРАЛИ "Topic", чтобы уведомления не перезаписывали друг друга!
+                headers={"Urgency": "high"} 
             )
-            print(f"🔔 Push (Urgency: High) отправлен пользователю {target_username}!")
+            print(f"🔔 Push отправлен пользователю {target_username}!")
         except WebPushException as ex:
             print("Push failed:", repr(ex))
         except Exception as e:
