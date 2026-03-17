@@ -14,7 +14,7 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     
     <style>
-        *, *::before, *::after { box-sizing: border-box; } /* Исключает выпирание элементов за края */
+        *, *::before, *::after { box-sizing: border-box; }
         
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -246,30 +246,16 @@
             stopScanner();
         }
 
-        async function displayMedia(url, elementId, key) {
-            try {
-                const resp = await fetch(url);
-                const encryptedText = await resp.text();
-                const decryptedDataUrl = decrypt(encryptedText, key); 
-                
-                const parts = decryptedDataUrl.split(',');
-                const mime = parts[0].match(/:(.*?);/)[1];
-                const bstr = atob(parts[1]);
-                let n = bstr.length;
-                const u8arr = new Uint8Array(n);
-                while(n--){ u8arr[n] = bstr.charCodeAt(n); }
-                const blob = new Blob([u8arr], {type: mime});
-                const blobUrl = URL.createObjectURL(blob);
-
-                const el = document.getElementById(elementId);
-                if (el) {
-                    el.onload = el.onloadedmetadata = () => {
-                        const chat = document.getElementById('chat');
-                        if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
-                    };
-                    el.src = blobUrl;
-                }
-            } catch (e) { console.error(e); }
+        // === ИСПРАВЛЕНО: БОЛЬШЕ НЕТ РАСШИФРОВКИ! БРАУЗЕР ГРУЗИТ ФАЙЛЫ МОМЕНТАЛЬНО ===
+        function displayMedia(url, elementId) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                el.onload = el.onloadedmetadata = () => {
+                    const chat = document.getElementById('chat');
+                    if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
+                };
+                el.src = url; 
+            }
         }
 
         async function loadContacts() {
@@ -346,8 +332,9 @@
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
-                    if (isMedia && text.startsWith("IMG:")) await displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
-                    else if (isMedia && text.startsWith("VOICE:")) await displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
+                    // ИСПРАВЛЕНО: Никакого await, файлы загружаются параллельно и моментально
+                    if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId);
+                    else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId);
                 }
                 
                 lastMessageCount = messages.length;
@@ -363,13 +350,14 @@
             el.value = '';
         }
 
+        // === ИСПРАВЛЕНО: ФАЙЛЫ НЕ ШИФРУЮТСЯ, ШИФРУЕТСЯ ТОЛЬКО ССЫЛКА НА НИХ ===
         async function uploadMedia(file) {
             if (!file || !activeContact) return;
-            setStatus("Encrypting Hi-Fi...");
+            setStatus("Uploading...");
             const reader = new FileReader();
             reader.onload = async (e) => {
-                const encrypted = encrypt(e.target.result, activeContact.key);
-                const resp = await fetch('/api/upload', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: encrypted }) });
+                const rawData = e.target.result;
+                const resp = await fetch('/api/upload', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: rawData }) });
                 const { url } = await resp.json();
                 const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
                 await postMsg(encrypt(prefix + url, activeContact.key));
@@ -397,6 +385,7 @@
             loadMessages();
         }
 
+        // === ИСПРАВЛЕНО: ПРОСТОЙ УНИВЕРСАЛЬНЫЙ ФОРМАТ ЗАПИСИ ===
         async function toggleVoice() {
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -411,23 +400,16 @@
                     gainNode.connect(destination);
                     const boostedStream = destination.stream;
 
-                    // ЖЕСТКИЙ FALLBACK: Пишем в OGG или WebM (Они работают лучше всего)
-                    let mimeType = 'audio/webm;codecs=opus';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/ogg;codecs=opus';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ''; // iOS Safari fallback
-
+                    let mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
                     mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 256000 });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                     mediaRecorder.onstop = () => { 
-                        // Собираем Blob и принудительно задаем ему тип WebM (для iOS)
-                        const finalBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
-                        uploadMedia(finalBlob); 
+                        uploadMedia(new Blob(audioChunks, {type: mimeType})); 
                         stream.getTracks().forEach(t => t.stop()); 
                         if (audioCtx.state !== 'closed') audioCtx.close();
                     };
-                    mediaRecorder.start(200); // Режет файл на куски по 200мс (Спасает от битых заголовков!)
+                    mediaRecorder.start();
                     btn.classList.add('recording-active');
                     setStatus("Hi-Fi Recording...");
                 } catch(e) { alert("Mic error: " + e.message); }
