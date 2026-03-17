@@ -366,14 +366,31 @@
 
         async function postMsg(content) {
             setStatus("Locating...");
-            const currentFriendUrl = await getFriendUrl(activeContact.username);
-            if (!currentFriendUrl) { setStatus("User Offline"); return; }
+            
+            // 1. Сначала пытаемся найти друга через Трекер (по Никнейму)
+            let targetUrl = await getFriendUrl(activeContact.username);
+            
+            // 2. ФЕДЕРАЦИЯ: Если Трекер не знает друга (он на другом сервере), 
+            // используем тот адрес, который мы сохранили при добавлении контакта!
+            if (!targetUrl) {
+                targetUrl = activeContact.username; // В старой логике IP хранился в поле username
+                console.log("[Federation] Tracker failed, using direct URL: " + targetUrl);
+            }
+            
+            // Если и там пусто - тогда точно оффлайн
+            if (!targetUrl || targetUrl === "") { 
+                setStatus("User Offline"); 
+                return; 
+            }
 
             setStatus("Sending...");
             const resp = await fetch('/send_message', {
-                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: `target_ip=${currentFriendUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                // Отправляем на найденный адрес (либо из Трекера, либо прямой URL)
+                body: `target_ip=${targetUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
             });
+            
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
             loadMessages();
