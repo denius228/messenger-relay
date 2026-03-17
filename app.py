@@ -166,6 +166,7 @@ def receive():
 def send():
     if not session.get('auth'): return "No Auth", 403
     target = request.form.get('target_ip').replace('https://','').replace('http://','').strip('/')
+    target_username = request.form.get('target_username') # НОВОЕ: Берем никнейм друга
     content = request.form.get('content')
     
     my_id = request.form.get('my_id')
@@ -174,7 +175,8 @@ def send():
     
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target, "Me", content, datetime.datetime.now().strftime("%H:%M")))
+    # НОВОЕ: Сохраняем переписку под никнеймом друга, а не под ссылкой
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target_username, "Me", content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     conn.close()
     

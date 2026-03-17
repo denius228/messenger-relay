@@ -62,7 +62,7 @@
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
-                <input type="text" id="content" placeholder="Message..." onkeypress="if(event.key === 'Enter') sendText()">
+                <input type="text" id="content" placeholder="Message..." onkeypress="if(event.key === 'Enter') sendText()" onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
                 <button id="voice-btn" onclick="toggleVoice()">🎤</button>
             </div>
             <button onclick="sendText()">➤</button>
@@ -297,21 +297,15 @@
 
         async function postMsg(content) {
             setStatus("Locating...");
-            // 1. Спрашиваем Трекер: Где сейчас активный контакт?
             const currentFriendUrl = await getFriendUrl(activeContact.username);
-            
-            if (!currentFriendUrl) {
-                setStatus("User Offline / Not Found");
-                return;
-            }
+            if (!currentFriendUrl) { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
-            // 2. Отправляем напрямую по найденному URL
             const resp = await fetch('/send_message', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                // target_ip = АДРЕС_ДРУГА_СЕГОДНЯ, my_id = МОЙ_НИКНЕЙМ
-                body: `target_ip=${currentFriendUrl}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
+                // НОВОЕ: Добавили передачу target_username на сервер
+                body: `target_ip=${currentFriendUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
             });
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
