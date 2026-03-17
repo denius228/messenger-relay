@@ -276,7 +276,7 @@
         // === ИСПРАВЛЕНИЕ ДУБЛИКАТОВ (Замок isUpdatingMessages) ===
         async function loadMessages() {
             if (!activeContact || isUpdatingMessages) return;
-            isUpdatingMessages = true; // Закрываем замок
+            isUpdatingMessages = true; 
             
             try {
                 const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
@@ -285,7 +285,6 @@
                 
                 if (messages.length === lastMessageCount) return;
 
-                // Если базу очистили - сбрасываем счетчик
                 if (messages.length < lastMessageCount) {
                     chat.innerHTML = "";
                     lastMessageCount = 0;
@@ -309,7 +308,7 @@
                         content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
                         isMedia = true;
                     } else if (text.startsWith("VOICE:")) {
-                        content = `<audio id="${mediaId}" controls src=""></audio>`;
+                        content = `<audio id="${mediaId}" controls></audio>`;
                         isMedia = true;
                     }
                     
@@ -318,15 +317,21 @@
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
-                    if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
-                    else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
+                    // ИСПРАВЛЕНИЕ: Мы ЖДЕМ завершения расшифровки (await), прежде чем идти дальше!
+                    if (isMedia && text.startsWith("IMG:")) {
+                        await displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
+                    } else if (isMedia && text.startsWith("VOICE:")) {
+                        await displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
+                    }
                 }
                 
                 lastMessageCount = messages.length;
-                if (isAtBottom || messages.length > lastMessageCount) setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
+                if (isAtBottom || messages.length > lastMessageCount) {
+                    setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 50); // Ускорили прокрутку
+                }
                 
             } finally {
-                isUpdatingMessages = false; // Открываем замок в любом случае
+                isUpdatingMessages = false; 
             }
         }
 
