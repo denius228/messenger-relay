@@ -25,7 +25,7 @@
         .msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
-        .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #000; min-height: 100px; }
+        .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 200px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
@@ -255,7 +255,7 @@
                 try { let audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.play().catch(e=>{}); } catch(e) {}
             }
 
-            const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 80;
+            const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 100;
             let html = "";
             
             for (let m of messages) {
@@ -265,7 +265,8 @@
                 const mediaId = "m" + Math.random().toString(36).substr(2, 7);
 
                 if (text.startsWith("IMG:")) {
-                    content = `<img id="${mediaId}" src="" alt="Loading...">`;
+                    // Добавлен loading="lazy", чтобы браузер не сходил с ума
+                    content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
                     displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
                 } else if (text.startsWith("VOICE:")) {
                     content = `<audio id="${mediaId}" controls src=""></audio>`;
@@ -274,10 +275,15 @@
                 html += `<div class="msg ${isOut ? 'out' : 'in'}"><b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small></div>`;
             }
             
+            // ВАЖНО: Мы обновляем DOM только один раз
             chat.innerHTML = html;
             lastMessageCount = messages.length;
-            if (isAtBottom || lastMessageCount > 0) chat.scrollTop = chat.scrollHeight;
-        }
+            
+            // Жесткая привязка к низу, если мы были внизу или появилось НОВОЕ сообщение
+            if (isAtBottom || messages.length > lastMessageCount) {
+                // Используем небольшую задержку, чтобы браузер успел отрендерить блоки
+                setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
+            }
 
         async function sendText() {
             const el = document.getElementById('content');
