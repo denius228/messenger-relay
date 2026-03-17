@@ -101,6 +101,9 @@
         let html5QrcodeScanner = null;
         let myUsername = localStorage.getItem('my_username') || "";
 
+        // ЗАМОК ОТ ДУБЛИКАТОВ СООБЩЕНИЙ
+        let isUpdatingMessages = false; 
+
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
         function urlBase64ToUint8Array(base64String) {
@@ -210,14 +213,20 @@
             stopScanner();
         }
 
+        // === ИСПРАВЛЕНИЕ АУДИО (Свой конвертер Base64 -> Blob, 100% работает на смартфонах) ===
         async function displayMedia(url, elementId, key) {
             try {
                 const resp = await fetch(url);
                 const encryptedText = await resp.text();
                 const decryptedDataUrl = decrypt(encryptedText, key); 
                 
-                const fetchResp = await fetch(decryptedDataUrl);
-                const blob = await fetchResp.blob();
+                const parts = decryptedDataUrl.split(',');
+                const mime = parts[0].match(/:(.*?);/)[1];
+                const bstr = atob(parts[1]);
+                let n = bstr.length;
+                const u8arr = new Uint8Array(n);
+                while(n--){ u8arr[n] = bstr.charCodeAt(n); }
+                const blob = new Blob([u8arr], {type: mime});
                 const blobUrl = URL.createObjectURL(blob);
 
                 const el = document.getElementById(elementId);
@@ -264,48 +273,61 @@
             loadContacts();
         }
 
+        // === ИСПРАВЛЕНИЕ ДУБЛИКАТОВ (Замок isUpdatingMessages) ===
         async function loadMessages() {
-            if (!activeContact) return;
-            const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
-            const messages = await resp.json();
-            const chat = document.getElementById('chat');
+            if (!activeContact || isUpdatingMessages) return;
+            isUpdatingMessages = true; // Закрываем замок
             
-            if (messages.length === lastMessageCount) return;
+            try {
+                const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
+                const messages = await resp.json();
+                const chat = document.getElementById('chat');
+                
+                if (messages.length === lastMessageCount) return;
 
-            if (lastMessageCount > 0 && messages.length > lastMessageCount) {
-                try { let audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.play().catch(e=>{}); } catch(e) {}
-            }
+                // Если базу очистили - сбрасываем счетчик
+                if (messages.length < lastMessageCount) {
+                    chat.innerHTML = "";
+                    lastMessageCount = 0;
+                }
 
-            const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 100;
-            
-            for (let i = lastMessageCount; i < messages.length; i++) {
-                let m = messages[i];
-                const isOut = (m[0] === 'Me');
-                let text = decrypt(m[1], activeContact.key);
-                let content = text;
-                const mediaId = "m" + Math.random().toString(36).substr(2, 7);
+                if (lastMessageCount > 0 && messages.length > lastMessageCount) {
+                    try { let audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.play().catch(e=>{}); } catch(e) {}
+                }
 
-                let isMedia = false;
-                if (text.startsWith("IMG:")) {
-                    content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
-                    isMedia = true;
-                } else if (text.startsWith("VOICE:")) {
-                    content = `<audio id="${mediaId}" controls src=""></audio>`;
-                    isMedia = true;
+                const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 100;
+                
+                for (let i = lastMessageCount; i < messages.length; i++) {
+                    let m = messages[i];
+                    const isOut = (m[0] === 'Me');
+                    let text = decrypt(m[1], activeContact.key);
+                    let content = text;
+                    const mediaId = "m" + Math.random().toString(36).substr(2, 7);
+
+                    let isMedia = false;
+                    if (text.startsWith("IMG:")) {
+                        content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
+                        isMedia = true;
+                    } else if (text.startsWith("VOICE:")) {
+                        content = `<audio id="${mediaId}" controls src=""></audio>`;
+                        isMedia = true;
+                    }
+                    
+                    let div = document.createElement('div');
+                    div.className = `msg ${isOut ? 'out' : 'in'}`;
+                    div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
+                    chat.appendChild(div);
+                    
+                    if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
+                    else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
                 }
                 
-                let div = document.createElement('div');
-                div.className = `msg ${isOut ? 'out' : 'in'}`;
-                div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
-                chat.appendChild(div);
+                lastMessageCount = messages.length;
+                if (isAtBottom || messages.length > lastMessageCount) setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
                 
-                // ИСПРАВЛЕНИЕ БАГА: Вызываем расшифровку ТОЛЬКО ПОСЛЕ того, как добавили тег на экран!
-                if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
-                else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
+            } finally {
+                isUpdatingMessages = false; // Открываем замок в любом случае
             }
-            
-            lastMessageCount = messages.length;
-            if (isAtBottom || messages.length > lastMessageCount) setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
         }
 
         async function sendText() {
