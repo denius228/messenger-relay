@@ -50,7 +50,8 @@ def upload_file():
     filename = str(uuid.uuid4()) + ".enc"
     with open(os.path.join(UPLOAD_FOLDER, filename), 'w') as f:
         f.write(data)
-    return jsonify({"url": f"https://{request.host}/uploads/{filename}"})
+    # ИСПРАВЛЕНИЕ: Возвращаем относительный путь, чтобы Caddy сам подставил домен!
+    return jsonify({"url": f"/uploads/{filename}"})
 
 @app.route('/login', methods=['POST'])
 def login():
