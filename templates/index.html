@@ -26,8 +26,7 @@
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
         
-        /* ИСПРАВЛЕНЫ ПРЫЖКИ ЧАТА ПРИ ФОТОГРАФИЯХ */
-        .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 200px; object-fit: cover; }
+        .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 150px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
         
@@ -98,6 +97,7 @@
         let contactMap = {};
         let mediaRecorder;
         let audioChunks = [];
+        let audioCtx; // Контекст аудио для усилителя
         const myHost = window.location.hostname; 
         let html5QrcodeScanner = null;
 
@@ -188,7 +188,6 @@
             stopScanner();
         }
 
-        // ИСПРАВЛЕНО: Blob-конвертер для правильной работы аудио на телефонах (0:00 bug)
         async function displayMedia(url, elementId, key) {
             try {
                 const resp = await fetch(url);
@@ -225,7 +224,7 @@
             if (activeContact?.name === name) return;
             activeContact = {name, username: name, key};
             lastMessageCount = 0;
-            document.getElementById('chat').innerHTML = "";
+            document.getElementById('chat').innerHTML = ""; // Очищаем чат при смене контакта
             loadMessages();
             loadContacts();
         }
@@ -245,7 +244,7 @@
             loadContacts();
         }
 
-        // ИСПРАВЛЕНО: Чат больше не "прыгает" при загрузке картинок
+        // === ИСПРАВЛЕНО: ЧАТ БОЛЬШЕ НЕ ПРЫГАЕТ (Умное добавление сообщений) ===
         async function loadMessages() {
             if (!activeContact) return;
             const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
@@ -259,27 +258,30 @@
             }
 
             const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 100;
-            let html = "";
             
-            for (let m of messages) {
+            // Добавляем ТОЛЬКО новые сообщения (не трогаем старые картинки)
+            for (let i = lastMessageCount; i < messages.length; i++) {
+                let m = messages[i];
                 const isOut = (m[0] === 'Me');
                 let text = decrypt(m[1], activeContact.key);
                 let content = text;
                 const mediaId = "m" + Math.random().toString(36).substr(2, 7);
 
                 if (text.startsWith("IMG:")) {
-                    content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
+                    content = `<img id="${mediaId}" src="" alt="Loading...">`;
                     displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
                 } else if (text.startsWith("VOICE:")) {
                     content = `<audio id="${mediaId}" controls src=""></audio>`;
                     displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
                 }
-                html += `<div class="msg ${isOut ? 'out' : 'in'}"><b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small></div>`;
+                
+                let div = document.createElement('div');
+                div.className = `msg ${isOut ? 'out' : 'in'}`;
+                div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
+                chat.appendChild(div);
             }
             
-            chat.innerHTML = html;
             lastMessageCount = messages.length;
-            
             if (isAtBottom || messages.length > lastMessageCount) {
                 setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
             }
@@ -328,7 +330,7 @@
             loadMessages();
         }
 
-        // ИСПРАВЛЕНО: Оригинальное Hi-Fi качество голоса (256 kbps, без глушения шума)
+        // === ИСПРАВЛЕНО: УСИЛИТЕЛЬ ЗВУКА ДЛЯ ТЕЛЕФОНОВ (Громкость +300%) ===
         async function toggleVoice() {
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -337,11 +339,24 @@
                         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 48000, channelCount: 1 } 
                     });
                     
+                    // Создаем Виртуальный Усилитель (GainNode)
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const source = audioCtx.createMediaStreamSource(stream);
+                    const gainNode = audioCtx.createGain();
+                    gainNode.gain.value = 3.0; // УВЕЛИЧИВАЕМ ГРОМКОСТЬ В 3 РАЗА!
+                    const destination = audioCtx.createMediaStreamDestination();
+                    
+                    source.connect(gainNode);
+                    gainNode.connect(destination);
+                    const boostedStream = destination.stream;
+                    // ------------------------------------
+
                     let mimeType = '';
                     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
                     else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
-                    mediaRecorder = new MediaRecorder(stream, { 
+                    // Записываем УСИЛЕННЫЙ поток
+                    mediaRecorder = new MediaRecorder(boostedStream, { 
                         mimeType: mimeType, 
                         audioBitsPerSecond: 256000 
                     });
@@ -350,7 +365,8 @@
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                     mediaRecorder.onstop = () => { 
                         uploadMedia(new Blob(audioChunks, {type: mimeType})); 
-                        stream.getTracks().forEach(t => t.stop()); 
+                        stream.getTracks().forEach(t => t.stop()); // Отключаем микрофон
+                        if (audioCtx.state !== 'closed') audioCtx.close(); // Очищаем память
                     };
                     
                     mediaRecorder.start();
