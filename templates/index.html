@@ -28,10 +28,7 @@
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #000; min-height: 100px; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
-        
-        /* ИСПРАВЛЕННЫЙ ОТСТУП СНИЗУ ДЛЯ ТЕЛЕФОНОВ */
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
-        
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; }
         button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; }
@@ -65,7 +62,6 @@
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
-                <!-- ИСПРАВЛЕНА КЛАВИАТУРА НА ТЕЛЕФОНЕ (onfocus) -->
                 <input type="text" id="content" placeholder="Message..." onkeypress="if(event.key === 'Enter') sendText()" onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
                 <button id="voice-btn" onclick="toggleVoice()">🎤</button>
             </div>
@@ -112,7 +108,6 @@
 
         function setStatus(text) { document.getElementById('status-bar').innerText = text.toUpperCase(); }
 
-        // ИСПОЛЬЗУЕМ ОТНОСИТЕЛЬНЫЕ ПУТИ (Без IP, чтобы не было ошибок протокола)
         async function pingTracker() {
             if (!myUsername) return;
             try {
@@ -190,18 +185,25 @@
             stopScanner();
         }
 
+        // === ИСПРАВЛЕННЫЙ МЕДИА ПЛЕЕР ДЛЯ ТЕЛЕФОНОВ ===
         async function displayMedia(url, elementId, key) {
             try {
                 const resp = await fetch(url);
                 const encryptedText = await resp.text();
-                const decryptedData = decrypt(encryptedText, key);
+                const decryptedDataUrl = decrypt(encryptedText, key); 
+                
+                // Конвертируем Base64 строку в настоящий файл (Blob), чтобы телефон не сходил с ума (Фикс 0:00)
+                const fetchResp = await fetch(decryptedDataUrl);
+                const blob = await fetchResp.blob();
+                const blobUrl = URL.createObjectURL(blob);
+
                 const el = document.getElementById(elementId);
                 if (el) {
-                    el.onload = () => {
+                    el.onload = el.onloadedmetadata = () => {
                         const chat = document.getElementById('chat');
                         if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
                     };
-                    el.src = decryptedData;
+                    el.src = blobUrl; // Вставляем чистый Blob URL
                 }
             } catch (e) { console.error(e); }
         }
@@ -304,53 +306,6 @@
             reader.readAsDataURL(file);
         }
 
-        async function toggleVoice() {
-            const btn = document.getElementById('voice-btn');
-            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-                try {
-                    // Универсальные настройки микрофона (без Hi-Fi излишеств, которые ломают мобилки)
-                    const stream = await navigator.mediaDevices.getUserMedia({ 
-                        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 48000 } 
-                    });
-                    
-                    // Умный выбор формата, который 100% поймет и запишет телефон
-                    let mimeType = 'audio/webm;codecs=opus'; // Идеально для Android Chrome
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = 'audio/mp4'; // Идеально для iOS Safari
-                    }
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = ''; // Если совсем туго, браузер выберет сам
-                    }
-
-                    // Золотой стандарт битрейта для мобилок (128 kbps)
-                    mediaRecorder = new MediaRecorder(stream, { 
-                        mimeType: mimeType, 
-                        audioBitsPerSecond: 128000 
-                    });
-                    
-                    audioChunks = [];
-                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-                    mediaRecorder.onstop = () => { 
-                        // Создаем финальный файл
-                        const finalBlob = new Blob(audioChunks, { type: mimeType });
-                        uploadMedia(finalBlob); 
-                        // Отключаем микрофон
-                        stream.getTracks().forEach(t => t.stop()); 
-                    };
-                    
-                    mediaRecorder.start(200); // Собираем кусочки каждые 200мс (помогает на старых телефонах)
-                    btn.classList.add('recording-active');
-                    setStatus("Recording...");
-                } catch(e) { 
-                    alert("Mic error: " + e.message); 
-                }
-            } else {
-                mediaRecorder.stop();
-                btn.classList.remove('recording-active');
-                setStatus("Encoding...");
-            }
-        }
-
         async function postMsg(content) {
             setStatus("Locating...");
             const currentFriendUrl = await getFriendUrl(activeContact.username);
@@ -360,7 +315,6 @@
             const resp = await fetch('/send_message', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                // ИСПРАВЛЕНО: Передаем Никнейм друга (target_username), чтобы сообщения не исчезали!
                 body: `target_ip=${currentFriendUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
             });
             const resText = await resp.text();
@@ -368,7 +322,43 @@
             loadMessages();
         }
 
-        // Автоматический обмен почтой между узлами
+        // === ИСПРАВЛЕННЫЙ ВВОД ЗВУКА С МАКСИМАЛЬНЫМ КАЧЕСТВОМ (Hi-Fi) ===
+        async function toggleVoice() {
+            const btn = document.getElementById('voice-btn');
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+                try {
+                    // Возвращаем оригинальные Hi-Fi настройки записи (Без эха и шумодава)
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 48000, channelCount: 1 } 
+                    });
+                    
+                    let mimeType = '';
+                    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+                    else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+
+                    mediaRecorder = new MediaRecorder(stream, { 
+                        mimeType: mimeType, 
+                        audioBitsPerSecond: 256000 // Максимальное качество
+                    });
+                    
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                    mediaRecorder.onstop = () => { 
+                        uploadMedia(new Blob(audioChunks, {type: mimeType})); 
+                        stream.getTracks().forEach(t => t.stop()); 
+                    };
+                    
+                    mediaRecorder.start();
+                    btn.classList.add('recording-active');
+                    setStatus("Hi-Fi Recording...");
+                } catch(e) { alert("Mic error: " + e.message); }
+            } else {
+                mediaRecorder.stop();
+                btn.classList.remove('recording-active');
+                setStatus("Encoding...");
+            }
+        }
+
         async function pollRelays() {
             if (!activeContact) return;
             const resp = await fetch('/api/contacts');
