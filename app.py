@@ -139,10 +139,17 @@ def send_push_notification(target_username, sender_username):
             webpush(
                 subscription_info=subscription_info,
                 data=json.dumps({"title": "Secure Chat", "body": f"Новое сообщение от {sender_username} 🔒"}),
-                vapid_private_key=VAPID_PRIVATE_PEM, # ИСПОЛЬЗУЕМ НАСТОЯЩИЙ СГЕНЕРИРОВАННЫЙ КЛЮЧ
-                vapid_claims={"sub": "mailto:admin@eprobot.ru"}
+                vapid_private_key=VAPID_PRIVATE_PEM,
+                vapid_claims={"sub": "mailto:admin@eprobot.ru"},
+                # --- НОВОЕ: ВАЖНЫЕ ЗАГОЛОВКИ ДЛЯ ПРОБИВАНИЯ БЛОКИРОВКИ ЭКРАНА ---
+                ttl=86400, # Сообщение будет жить 24 часа, если телефон без интернета
+                headers={
+                    "Urgency": "high",           # Требуем разбудить процессор
+                    "Topic": "new-message"       # Заменяем старые уведомления новыми, чтобы не спамить
+                }
+                # -----------------------------------------------------------------
             )
-            print(f"🔔 Push успешно отправлен пользователю {target_username}!")
+            print(f"🔔 Push (Urgency: High) отправлен пользователю {target_username}")
         except WebPushException as ex:
             print("Push failed:", repr(ex))
         except Exception as e:
