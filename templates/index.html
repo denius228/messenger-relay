@@ -308,16 +308,42 @@
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 44100, channelCount: 1 } });
-                    let mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-                    mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType, audioBitsPerSecond: 256000 });
+                    // Универсальные настройки микрофона (без Hi-Fi излишеств, которые ломают мобилки)
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 48000 } 
+                    });
+                    
+                    // Умный выбор формата, который 100% поймет и запишет телефон
+                    let mimeType = 'audio/webm;codecs=opus'; // Идеально для Android Chrome
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'audio/mp4'; // Идеально для iOS Safari
+                    }
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = ''; // Если совсем туго, браузер выберет сам
+                    }
+
+                    // Золотой стандарт битрейта для мобилок (128 kbps)
+                    mediaRecorder = new MediaRecorder(stream, { 
+                        mimeType: mimeType, 
+                        audioBitsPerSecond: 128000 
+                    });
+                    
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-                    mediaRecorder.onstop = () => { uploadMedia(new Blob(audioChunks, {type: mimeType})); stream.getTracks().forEach(t => t.stop()); };
-                    mediaRecorder.start();
+                    mediaRecorder.onstop = () => { 
+                        // Создаем финальный файл
+                        const finalBlob = new Blob(audioChunks, { type: mimeType });
+                        uploadMedia(finalBlob); 
+                        // Отключаем микрофон
+                        stream.getTracks().forEach(t => t.stop()); 
+                    };
+                    
+                    mediaRecorder.start(200); // Собираем кусочки каждые 200мс (помогает на старых телефонах)
                     btn.classList.add('recording-active');
-                    setStatus("Hi-Fi Recording...");
-                } catch(e) { alert("Mic error: " + e); }
+                    setStatus("Recording...");
+                } catch(e) { 
+                    alert("Mic error: " + e.message); 
+                }
             } else {
                 mediaRecorder.stop();
                 btn.classList.remove('recording-active');
