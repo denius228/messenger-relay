@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Secure Chat</title>
     
     <link rel="manifest" href="/static/manifest.json">
@@ -14,10 +14,26 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     
     <style>
-        body { font-family: sans-serif; background: #0e1621; color: white; margin: 0; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
-        .header { background: #17212b; padding: 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #111; display: flex; justify-content: space-between; align-items: center; }
-        .btn-small { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
-        #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; /* Нативные системные шрифты */
+            background: #0e1621; 
+            color: white; 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100dvh; 
+            overflow: hidden; 
+            overscroll-behavior: none; /* Запрещает "резиновый отскок" при прокрутке вверх/вниз */
+            -webkit-user-select: none; /* Запрещает выделять текст долгим нажатием (как на сайте) */
+            user-select: none;
+            -webkit-tap-highlight-color: transparent; /* Убирает синее мигание при нажатии на кнопки */
+        }
+        
+        /* Разрешаем выделять текст только внутри самих сообщений и полей ввода */
+        .msg, input {
+            -webkit-user-select: text;
+            user-select: text;
+        }
         
         #contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; align-items: center; }
         
