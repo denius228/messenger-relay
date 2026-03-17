@@ -411,19 +411,23 @@
                     gainNode.connect(destination);
                     const boostedStream = destination.stream;
 
-                    let mimeType = '';
-                    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
-                    else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+                    // ЖЕСТКИЙ FALLBACK: Пишем в OGG или WebM (Они работают лучше всего)
+                    let mimeType = 'audio/webm;codecs=opus';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/ogg;codecs=opus';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ''; // iOS Safari fallback
 
                     mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 256000 });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                     mediaRecorder.onstop = () => { 
-                        uploadMedia(new Blob(audioChunks, {type: mimeType})); 
+                        // Собираем Blob и принудительно задаем ему тип WebM (для iOS)
+                        const finalBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
+                        uploadMedia(finalBlob); 
                         stream.getTracks().forEach(t => t.stop()); 
                         if (audioCtx.state !== 'closed') audioCtx.close();
                     };
-                    mediaRecorder.start();
+                    mediaRecorder.start(200); // Режет файл на куски по 200мс (Спасает от битых заголовков!)
                     btn.classList.add('recording-active');
                     setStatus("Hi-Fi Recording...");
                 } catch(e) { alert("Mic error: " + e.message); }

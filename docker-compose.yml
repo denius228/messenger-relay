@@ -6,9 +6,8 @@ services:
     container_name: secure_chat_node
     restart: always
     volumes:
-      # Пробрасываем только папку для фото/аудио, чтобы они не пропадали.
-      # База данных и ключи будут жить внутри контейнера (при пересоздании контейнера они сбросятся, для тестов это Ок).
       - ./uploads:/app/uploads
+      - db_data:/app/db_data # Создаем новую, вечную папку для базы данных
     ports:
       - "5000:5000"
 
@@ -29,3 +28,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  db_data: # Объявляем вечный диск

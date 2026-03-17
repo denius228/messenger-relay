@@ -2,28 +2,33 @@ import sys, os, sqlite3, datetime, uuid, requests, time, threading, json, base64
 from flask import Flask, request, jsonify, session, redirect, url_for, send_from_directory, render_template
 from flask_cors import CORS
 from pywebpush import webpush, WebPushException
-
-# Импортируем библиотеку криптографии (она уже установлена вместе с pywebpush)
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
 CORS(app)
 app.secret_key = 'HIFI_STABLE_V10'
+
+# ==========================================
+# НАСТРОЙКИ ПАПОК И ВЕЧНОГО ХРАНИЛИЩА DOCKER
+# ==========================================
 UPLOAD_FOLDER = 'uploads'
+DB_DIR = 'db_data'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(DB_DIR, exist_ok=True) # Создаем вечную папку
+
+DB_PATH = os.path.join(DB_DIR, 'messages.db')
+USER_PASSWORD = "123"
 app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
 
-USER_PASSWORD = "123"
-
 # =================================================================
-# АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ НАСТОЯЩИХ VAPID-КЛЮЧЕЙ (ДЛЯ PUSH)
+# АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ НАСТОЯЩИХ VAPID-КЛЮЧЕЙ (В ВЕЧНУЮ ПАПКУ)
 # =================================================================
-VAPID_PRIVATE_PEM = "vapid_private.pem"
+VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
+VAPID_PUBLIC_TXT = os.path.join(DB_DIR, "vapid_public.txt")
 VAPID_PUBLIC_KEY = ""
 
 if not os.path.exists(VAPID_PRIVATE_PEM):
-    # Генерируем настоящий приватный ключ ECDSA (P-256)
     private_key = ec.generate_private_key(ec.SECP256R1())
     pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -33,18 +38,18 @@ if not os.path.exists(VAPID_PRIVATE_PEM):
     with open(VAPID_PRIVATE_PEM, "wb") as f:
         f.write(pem)
         
-    # Формируем правильный публичный ключ для браузера
     public_numbers = private_key.public_key().public_numbers()
     public_bytes = b'\x04' + public_numbers.x.to_bytes(32, 'big') + public_numbers.y.to_bytes(32, 'big')
     pub_b64 = base64.urlsafe_b64encode(public_bytes).rstrip(b'=').decode('utf-8')
-    with open("vapid_public.txt", "w") as f:
+    with open(VAPID_PUBLIC_TXT, "w") as f:
         f.write(pub_b64)
 
-# Читаем публичный ключ из файла
-with open("vapid_public.txt", "r") as f:
+with open(VAPID_PUBLIC_TXT, "r") as f:
     VAPID_PUBLIC_KEY = f.read().strip()
-# =================================================================
 
+# ==========================================
+# ФОНОВАЯ ОЧИСТКА МЕДИА
+# ==========================================
 def cleanup_old_files():
     while True:
         now = time.time()
@@ -57,8 +62,11 @@ def cleanup_old_files():
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
+# ==========================================
+# ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+# ==========================================
 def init_db():
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH) # ИСПОЛЬЗУЕМ ВЕЧНУЮ БАЗУ
     c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS msgs (chat_with TEXT, sender TEXT, content TEXT, timestamp TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS contacts (name TEXT, ip TEXT, secret_key TEXT)')
@@ -68,12 +76,14 @@ def init_db():
     conn.commit()
     conn.close()
 
+# ==========================================
+# РОУТЫ И ЛОГИКА
+# ==========================================
 @app.route('/sw.js')
 def serve_sw(): return app.send_static_file('sw.js')
 
 @app.route('/')
 def index(): 
-    # Отправляем настоящий публичный ключ в браузер!
     return render_template('index.html', logged_in=session.get('auth'), vapid_public_key=VAPID_PUBLIC_KEY)
 
 @app.route('/uploads/<path:filename>')
@@ -96,7 +106,7 @@ def update_tracker():
     data = request.json
     username = data.get('username')
     url = data.get('url').replace('https://','').replace('http://','').strip('/')
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("REPLACE INTO tracker (username, current_url, last_seen) VALUES (?, ?, ?)", (username, url, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
@@ -106,7 +116,7 @@ def update_tracker():
 @app.route('/api/tracker/get', methods=['GET'])
 def get_tracker():
     username = request.args.get('username')
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT current_url FROM tracker WHERE username = ?", (username,))
     row = c.fetchone()
@@ -119,7 +129,7 @@ def push_subscribe():
     data = request.json
     username = data.get('username')
     sub_json = json.dumps(data.get('subscription'))
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("REPLACE INTO push_subs (username, sub_json) VALUES (?, ?)", (username, sub_json))
     conn.commit()
@@ -127,7 +137,7 @@ def push_subscribe():
     return jsonify({"status": "subscribed"})
 
 def send_push_notification(target_username, sender_username):
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT sub_json FROM push_subs WHERE username = ?", (target_username,))
     row = c.fetchone()
@@ -141,15 +151,10 @@ def send_push_notification(target_username, sender_username):
                 data=json.dumps({"title": "Secure Chat", "body": f"Новое сообщение от {sender_username} 🔒"}),
                 vapid_private_key=VAPID_PRIVATE_PEM,
                 vapid_claims={"sub": "mailto:admin@eprobot.ru"},
-                # --- НОВОЕ: ВАЖНЫЕ ЗАГОЛОВКИ ДЛЯ ПРОБИВАНИЯ БЛОКИРОВКИ ЭКРАНА ---
-                ttl=86400, # Сообщение будет жить 24 часа, если телефон без интернета
-                headers={
-                    "Urgency": "high",           # Требуем разбудить процессор
-                    "Topic": "new-message"       # Заменяем старые уведомления новыми, чтобы не спамить
-                }
-                # -----------------------------------------------------------------
+                ttl=86400,
+                headers={"Urgency": "high", "Topic": "new-message"}
             )
-            print(f"🔔 Push (Urgency: High) отправлен пользователю {target_username}")
+            print(f"🔔 Push (Urgency: High) отправлен пользователю {target_username}!")
         except WebPushException as ex:
             print("Push failed:", repr(ex))
         except Exception as e:
@@ -162,9 +167,8 @@ def receive():
     target = data.get('target')
     content = data.get('content')
     
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Проверяем, есть ли отправитель в контактах (по Имени ИЛИ по URL)
     c.execute("SELECT ip FROM contacts WHERE name = ? OR ip = ?", (sender, sender))
     if not c.fetchone():
         conn.close()
@@ -189,7 +193,7 @@ def send():
     if not my_id: my_id = request.host
     my_id = my_id.replace('https://','').replace('http://','').split(':')[0]
     
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target_username, "Me", content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
@@ -197,21 +201,11 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        print(f"🚀 Отправляю на: {url}")
-        print(f"📦 Данные: sender={my_id}, target={target_username}")
-        
         resp = requests.post(url, json={"sender": my_id, "target": target_username, "content": content}, timeout=10)
-        
-        if resp.status_code == 200: 
-            print("✅ Успешно доставлено напрямую!")
-            return "OK"
-            
-        print(f"❌ Ошибка доставки: Сервер ответил {resp.status_code} - {resp.text}")
-        raise Exception(f"Status: {resp.status_code}")
-        
-    except Exception as e:
-        print(f"⚠️ Сохранено в Mailbox. Причина: {e}")
-        conn = sqlite3.connect('messages.db')
+        if resp.status_code == 200: return "OK"
+        raise Exception()
+    except:
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_id, content, datetime.datetime.now().strftime("%H:%M")))
         conn.commit()
@@ -221,8 +215,7 @@ def send():
 @app.route('/api/contacts', methods=['GET', 'POST', 'DELETE'])
 def manage_contacts():
     if not session.get('auth'): return jsonify({"error": "No Auth"}), 403
-    
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
     if request.method == 'POST':
@@ -234,8 +227,6 @@ def manage_contacts():
     elif request.method == 'DELETE':
         d = request.json
         c.execute("DELETE FROM contacts WHERE name = ?", (d['name'],))
-        # Опционально: можно раскомментировать, чтобы при удалении контакта удалялась и переписка с ним
-        # c.execute("DELETE FROM msgs WHERE chat_with = ?", (d['name'],))
         conn.commit()
 
     c.execute("SELECT * FROM contacts")
@@ -248,7 +239,7 @@ def get_messages():
     if not session.get('auth'): return jsonify([])
     chat_with = request.args.get('chat_with')
     if not chat_with: return jsonify([])
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
     messages = c.fetchall()
@@ -258,7 +249,7 @@ def get_messages():
 @app.route('/api/mailbox/check')
 def check_mailbox():
     tid = request.args.get('target_id')
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT sender_id, content, timestamp FROM mailbox WHERE target_id = ?", (tid,))
     rows = c.fetchall()
@@ -272,7 +263,7 @@ def check_mailbox():
 def save_synced():
     if not session.get('auth'): return "No Auth", 403
     data = request.json.get('messages', [])
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     for m in data:
         c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[0], m[1], m[2]))
