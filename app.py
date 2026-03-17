@@ -164,10 +164,11 @@ def receive():
     
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
-    c.execute("SELECT ip FROM contacts WHERE ip = ?", (sender,))
+    # Проверяем, есть ли отправитель в контактах (по Имени ИЛИ по URL)
+    c.execute("SELECT ip FROM contacts WHERE name = ? OR ip = ?", (sender, sender))
     if not c.fetchone():
         conn.close()
-        return jsonify({"error": "Who are you?"}), 403
+        return jsonify({"error": f"Anti-Spam: Unknown sender {sender}"}), 403
 
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (sender, sender, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()

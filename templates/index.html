@@ -83,7 +83,9 @@
             <h3>Add Contact</h3>
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
+            <!-- ВАЖНО: Разделяем Имя и URL -->
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
+            <input type="text" id="new-ip" placeholder="External URL (Optional)">
             <input type="text" id="new-key" placeholder="Secret Key">
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
@@ -292,14 +294,21 @@
 
         async function addContact() {
             const username = document.getElementById('new-name').value.trim();
+            // Если ввели URL - используем его, если нет - используем никнейм (для поиска в Трекере)
+            let ip = document.getElementById('new-ip').value.trim();
+            if (!ip) ip = username; 
+            
             const key = document.getElementById('new-key').value.trim();
-            if(!username || !key) return alert("Fill all fields");
+            if(!username || !key) return alert("Fill Username and Key!");
+            
             await fetch('/api/contacts', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({name: username, ip: username, key: key})
+                body: JSON.stringify({name: username, ip: ip, key: key})
             });
             closeModals();
-            document.getElementById('new-name').value = ''; document.getElementById('new-key').value = '';
+            document.getElementById('new-name').value = ''; 
+            document.getElementById('new-ip').value = ''; 
+            document.getElementById('new-key').value = '';
             loadContacts();
         }
 
@@ -391,14 +400,15 @@
         async function postMsg(content) {
             setStatus("Locating...");
             
-            // ФЕДЕРАЦИЯ: Если нет в Трекере, используем сохраненный URL контакта!
+            // 1. Ищем в Трекере (по никнейму)
             let targetUrl = await getFriendUrl(activeContact.username);
+            
+            // 2. Если Трекер не знает, берем URL из нашей записной книжки (contactMap или IP)
             if (!targetUrl) {
+                // activeContact.username сейчас хранит IP (URL), если мы ввели его при добавлении
                 targetUrl = activeContact.username; 
             }
-            if (!targetUrl || targetUrl === "") { 
-                setStatus("User Offline"); return; 
-            }
+            if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
             const resp = await fetch('/send_message', {
