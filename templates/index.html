@@ -25,9 +25,12 @@
         .msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
+        
+        /* ИСПРАВЛЕНЫ ПРЫЖКИ ЧАТА ПРИ ФОТОГРАФИЯХ */
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 200px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
+        
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; }
@@ -185,14 +188,13 @@
             stopScanner();
         }
 
-        // === ИСПРАВЛЕННЫЙ МЕДИА ПЛЕЕР ДЛЯ ТЕЛЕФОНОВ ===
+        // ИСПРАВЛЕНО: Blob-конвертер для правильной работы аудио на телефонах (0:00 bug)
         async function displayMedia(url, elementId, key) {
             try {
                 const resp = await fetch(url);
                 const encryptedText = await resp.text();
                 const decryptedDataUrl = decrypt(encryptedText, key); 
                 
-                // Конвертируем Base64 строку в настоящий файл (Blob), чтобы телефон не сходил с ума (Фикс 0:00)
                 const fetchResp = await fetch(decryptedDataUrl);
                 const blob = await fetchResp.blob();
                 const blobUrl = URL.createObjectURL(blob);
@@ -203,7 +205,7 @@
                         const chat = document.getElementById('chat');
                         if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
                     };
-                    el.src = blobUrl; // Вставляем чистый Blob URL
+                    el.src = blobUrl;
                 }
             } catch (e) { console.error(e); }
         }
@@ -243,6 +245,7 @@
             loadContacts();
         }
 
+        // ИСПРАВЛЕНО: Чат больше не "прыгает" при загрузке картинок
         async function loadMessages() {
             if (!activeContact) return;
             const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
@@ -265,7 +268,6 @@
                 const mediaId = "m" + Math.random().toString(36).substr(2, 7);
 
                 if (text.startsWith("IMG:")) {
-                    // Добавлен loading="lazy", чтобы браузер не сходил с ума
                     content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
                     displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
                 } else if (text.startsWith("VOICE:")) {
@@ -275,15 +277,13 @@
                 html += `<div class="msg ${isOut ? 'out' : 'in'}"><b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small></div>`;
             }
             
-            // ВАЖНО: Мы обновляем DOM только один раз
             chat.innerHTML = html;
             lastMessageCount = messages.length;
             
-            // Жесткая привязка к низу, если мы были внизу или появилось НОВОЕ сообщение
             if (isAtBottom || messages.length > lastMessageCount) {
-                // Используем небольшую задержку, чтобы браузер успел отрендерить блоки
                 setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 100);
             }
+        }
 
         async function sendText() {
             const el = document.getElementById('content');
@@ -328,12 +328,11 @@
             loadMessages();
         }
 
-        // === ИСПРАВЛЕННЫЙ ВВОД ЗВУКА С МАКСИМАЛЬНЫМ КАЧЕСТВОМ (Hi-Fi) ===
+        // ИСПРАВЛЕНО: Оригинальное Hi-Fi качество голоса (256 kbps, без глушения шума)
         async function toggleVoice() {
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
                 try {
-                    // Возвращаем оригинальные Hi-Fi настройки записи (Без эха и шумодава)
                     const stream = await navigator.mediaDevices.getUserMedia({ 
                         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 48000, channelCount: 1 } 
                     });
@@ -344,7 +343,7 @@
 
                     mediaRecorder = new MediaRecorder(stream, { 
                         mimeType: mimeType, 
-                        audioBitsPerSecond: 256000 // Максимальное качество
+                        audioBitsPerSecond: 256000 
                     });
                     
                     audioChunks = [];
