@@ -7,28 +7,21 @@ CORS(app)
 app.secret_key = 'HIFI_STABLE_V10'
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024 # Лимит 30MB
+app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
 
-USER_PASSWORD = "123" 
+USER_PASSWORD = "123"
 
-# --- НОВАЯ ФУНКЦИЯ: Очистка старых медиафайлов (старше 7 дней) ---
 def cleanup_old_files():
     while True:
         now = time.time()
         for filename in os.listdir(UPLOAD_FOLDER):
             filepath = os.path.join(UPLOAD_FOLDER, filename)
-            # 604800 секунд = 7 дней
             if os.path.isfile(filepath) and os.stat(filepath).st_mtime < now - 604800:
-                try:
-                    os.remove(filepath)
-                    print(f"Удален старый файл: {filename}")
-                except Exception as e:
-                    pass
-        time.sleep(86400) # Проверять раз в сутки (86400 сек)
+                try: os.remove(filepath)
+                except Exception: pass
+        time.sleep(86400)
 
-# Запускаем очистку в фоновом режиме при старте сервера
 threading.Thread(target=cleanup_old_files, daemon=True).start()
-# ---------------------------------------------------------------
 
 def init_db():
     conn = sqlite3.connect('messages.db')
@@ -36,6 +29,10 @@ def init_db():
     c.execute('CREATE TABLE IF NOT EXISTS msgs (chat_with TEXT, sender TEXT, content TEXT, timestamp TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS contacts (name TEXT, ip TEXT, secret_key TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS mailbox (target_id TEXT, sender_id TEXT, content TEXT, timestamp TEXT)')
+    
+    # --- НОВАЯ ТАБЛИЦА: ТРЕКЕР (Маршрутизатор) ---
+    c.execute('CREATE TABLE IF NOT EXISTS tracker (username TEXT PRIMARY KEY, current_url TEXT, last_seen TEXT)')
+    # ---------------------------------------------
     conn.commit()
     conn.close()
 
@@ -57,9 +54,41 @@ def upload_file():
 
 @app.route('/login', methods=['POST'])
 def login():
-    if request.form.get('password') == USER_PASSWORD: 
-        session['auth'] = True
+    if request.form.get('password') == USER_PASSWORD: session['auth'] = True
     return redirect(url_for('index'))
+
+# ==========================================
+# НОВЫЕ ЭНДПОИНТЫ ДЛЯ МАРШРУТИЗАТОРА (TRACKER)
+# ==========================================
+
+@app.route('/api/tracker/update', methods=['POST'])
+def update_tracker():
+    """ Устройство сообщает трекеру свой новый Cloudflare URL """
+    data = request.json
+    username = data.get('username')
+    url = data.get('url').replace('https://','').replace('http://','').strip('/')
+    
+    conn = sqlite3.connect('messages.db')
+    c = conn.cursor()
+    c.execute("REPLACE INTO tracker (username, current_url, last_seen) VALUES (?, ?, ?)", 
+              (username, url, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "updated"})
+
+@app.route('/api/tracker/get', methods=['GET'])
+def get_tracker():
+    """ Устройство спрашивает трекер: "Где сейчас этот username?" """
+    username = request.args.get('username')
+    conn = sqlite3.connect('messages.db')
+    c = conn.cursor()
+    c.execute("SELECT current_url FROM tracker WHERE username = ?", (username,))
+    row = c.fetchone()
+    conn.close()
+    if row: return jsonify({"url": row[0]})
+    return jsonify({"error": "not found"}), 404
+
+# ==========================================
 
 @app.route('/api/contacts', methods=['GET', 'POST'])
 def manage_contacts():
@@ -81,7 +110,6 @@ def get_messages():
     if not session.get('auth'): return jsonify([])
     chat_with = request.args.get('chat_with')
     if not chat_with: return jsonify([])
-    
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
     c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
@@ -117,8 +145,7 @@ def save_synced():
 @app.route('/receive', methods=['POST'])
 def receive():
     data = request.json
-    # Очищаем ID отправителя от портов на всякий случай
-    sender = data.get('sender', '').split(':')[0] 
+    sender = data.get('sender', '').split(':')[0]
     content = data.get('content')
     
     conn = sqlite3.connect('messages.db')
@@ -141,12 +168,9 @@ def send():
     target = request.form.get('target_ip').replace('https://','').replace('http://','').strip('/')
     content = request.form.get('content')
     
-    # --- НОВОЕ: Берем наш настоящий Cloudflare-ID из браузера ---
     my_id = request.form.get('my_id')
-    if not my_id:
-        my_id = request.host # Запасной вариант
-    my_id = my_id.replace('https://','').replace('http://','').strip('/')
-    # -------------------------------------------------------------
+    if not my_id: my_id = request.host
+    my_id = my_id.replace('https://','').replace('http://','').split(':')[0]
     
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
@@ -169,4 +193,5 @@ def send():
 
 if __name__ == '__main__':
     init_db()
+    # Запускаем на всех интерфейсах (чтобы VPS был доступен по IP)
     app.run(host='0.0.0.0', port=5000)
