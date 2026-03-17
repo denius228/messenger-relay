@@ -246,15 +246,32 @@
             stopScanner();
         }
 
-        // === ИСПРАВЛЕНО: БОЛЬШЕ НЕТ РАСШИФРОВКИ! БРАУЗЕР ГРУЗИТ ФАЙЛЫ МОМЕНТАЛЬНО ===
-        function displayMedia(url, elementId) {
-            const el = document.getElementById(elementId);
-            if (el) {
-                el.onload = el.onloadedmetadata = () => {
-                    const chat = document.getElementById('chat');
-                    if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
-                };
-                el.src = url; 
+        // =========================================================
+        // ИСПРАВЛЕННЫЙ ЗАГРУЗЧИК МЕДИА
+        // =========================================================
+        async function displayMedia(url, elementId) {
+            try {
+                // Скачиваем текстовый файл .enc с чужого сервера
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("File not found");
+                
+                // Извлекаем строку Base64 (в которой уже зашит data:image/...)
+                const base64Data = await response.text(); 
+                
+                const el = document.getElementById(elementId);
+                if (el) {
+                    el.onload = el.onloadedmetadata = () => {
+                        const chat = document.getElementById('chat');
+                        // Сдвигаем скролл вниз, только если пользователь уже был внизу
+                        if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) {
+                            chat.scrollTop = chat.scrollHeight;
+                        }
+                    };
+                    // Вставляем содержимое прямо в src
+                    el.src = base64Data; 
+                }
+            } catch (error) {
+                console.error("Ошибка загрузки медиа:", error);
             }
         }
 
@@ -332,7 +349,7 @@
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
-                    // ИСПРАВЛЕНО: Никакого await, файлы загружаются параллельно и моментально
+                    // Запуск асинхронного скачивания медиа
                     if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId);
                     else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId);
                 }
@@ -350,7 +367,6 @@
             el.value = '';
         }
 
-        // === ИСПРАВЛЕНО: ФАЙЛЫ НЕ ШИФРУЮТСЯ, ШИФРУЕТСЯ ТОЛЬКО ССЫЛКА НА НИХ ===
         async function uploadMedia(file) {
             if (!file || !activeContact) return;
             setStatus("Uploading...");
@@ -363,11 +379,9 @@
                     body: JSON.stringify({ data: rawData }) 
                 });
                 
-                const { url } = await resp.json(); // url = "afd5b300...enc"
+                const { url } = await resp.json(); 
                 const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
                 
-                // ИСПРАВЛЕНИЕ: Берем домен прямо из браузера (window.location.origin) 
-                // и склеиваем с именем файла! Получится ИДЕАЛЬНАЯ абсолютная ссылка!
                 const absoluteUrl = `${window.location.origin}/uploads/${url}`;
                 
                 await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
@@ -395,7 +409,6 @@
             loadMessages();
         }
 
-        // === ИСПРАВЛЕНО: ПРОСТОЙ УНИВЕРСАЛЬНЫЙ ФОРМАТ ЗАПИСИ ===
         async function toggleVoice() {
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
