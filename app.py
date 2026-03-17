@@ -207,16 +207,26 @@ def send():
         conn.close()
         return "Relayed"
 
-@app.route('/api/contacts', methods=['GET', 'POST'])
+@app.route('/api/contacts', methods=['GET', 'POST', 'DELETE'])
 def manage_contacts():
-    if not session.get('auth'): return jsonify([])
+    if not session.get('auth'): return jsonify({"error": "No Auth"}), 403
+    
     conn = sqlite3.connect('messages.db')
     c = conn.cursor()
+    
     if request.method == 'POST':
         d = request.json
         clean_ip = d['ip'].replace('https://','').replace('http://','').strip('/')
         c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (d['name'], clean_ip, d['key']))
         conn.commit()
+        
+    elif request.method == 'DELETE':
+        d = request.json
+        c.execute("DELETE FROM contacts WHERE name = ?", (d['name'],))
+        # Опционально: можно раскомментировать, чтобы при удалении контакта удалялась и переписка с ним
+        # c.execute("DELETE FROM msgs WHERE chat_with = ?", (d['name'],))
+        conn.commit()
+
     c.execute("SELECT * FROM contacts")
     res = c.fetchall()
     conn.close()
