@@ -21,9 +21,6 @@ DB_PATH = os.path.join(DB_DIR, 'messages.db')
 USER_PASSWORD = "123"
 app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
 
-# =================================================================
-# АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ НАСТОЯЩИХ VAPID-КЛЮЧЕЙ (В ВЕЧНУЮ ПАПКУ)
-# =================================================================
 VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
 VAPID_PUBLIC_TXT = os.path.join(DB_DIR, "vapid_public.txt")
 VAPID_PUBLIC_KEY = ""
@@ -47,9 +44,6 @@ if not os.path.exists(VAPID_PRIVATE_PEM):
 with open(VAPID_PUBLIC_TXT, "r") as f:
     VAPID_PUBLIC_KEY = f.read().strip()
 
-# ==========================================
-# ФОНОВАЯ ОЧИСТКА МЕДИА
-# ==========================================
 def cleanup_old_files():
     while True:
         now = time.time()
@@ -62,9 +56,6 @@ def cleanup_old_files():
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
-# ==========================================
-# ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
-# ==========================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -76,9 +67,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ==========================================
-# РОУТЫ И ЛОГИКА
-# ==========================================
 @app.route('/sw.js')
 def serve_sw(): return app.send_static_file('sw.js')
 
@@ -122,7 +110,8 @@ def get_tracker():
     row = c.fetchone()
     conn.close()
     if row: return jsonify({"url": row[0]})
-    return jsonify({"error": "not found"}), 404
+    # ФИКС КРАСНЫХ ОШИБОК В КОНСОЛИ
+    return jsonify({"url": None, "status": "offline"}), 200 
 
 @app.route('/api/push/subscribe', methods=['POST'])
 def push_subscribe():
@@ -152,11 +141,9 @@ def send_push_notification(target_username, sender_username):
                 vapid_private_key=VAPID_PRIVATE_PEM,
                 vapid_claims={"sub": "mailto:admin@eprobot.ru"},
                 ttl=86400,
-                headers={"Urgency": "high"} # Убрали Topic, чтобы пуши не удаляли друг друга
+                headers={"Urgency": "high", "Topic": "new-message"} # ВЕРНУЛИ КАК БЫЛО
             )
             print(f"🔔 Push отправлен пользователю {target_username}!")
-        except WebPushException as ex:
-            print("Push failed:", repr(ex))
         except Exception as e:
             print("Push error:", e)
 
