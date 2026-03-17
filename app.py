@@ -1,7 +1,11 @@
-import sys, os, sqlite3, datetime, uuid, requests, time, threading, json
+import sys, os, sqlite3, datetime, uuid, requests, time, threading, json, base64
 from flask import Flask, request, jsonify, session, redirect, url_for, send_from_directory, render_template
 from flask_cors import CORS
 from pywebpush import webpush, WebPushException
+
+# Импортируем библиотеку криптографии (она уже установлена вместе с pywebpush)
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
 CORS(app)
@@ -12,18 +16,34 @@ app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
 
 USER_PASSWORD = "123"
 
-# VAPID Ключи для Push
-VAPID_PRIVATE_KEY = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfXU1oX7B_3bZ3z_X9_9_9_9_9_9_9_9_9_9_9_9_9_9hRANCAAS_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9"
-VAPID_PUBLIC_KEY = "BDkXf5b_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9_9"
+# =================================================================
+# АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ НАСТОЯЩИХ VAPID-КЛЮЧЕЙ (ДЛЯ PUSH)
+# =================================================================
+VAPID_PRIVATE_PEM = "vapid_private.pem"
+VAPID_PUBLIC_KEY = ""
 
-try:
-    from pywebpush import webpush, WebPushException
-    import ecdsa
-    if not os.path.exists("vapid_private.pem"):
-        private_key = ecdsa.SigningKey.generate(curve=ecdsa.NIST256p)
-        VAPID_PRIVATE_KEY = private_key.to_pem().decode('utf-8')
-        VAPID_PUBLIC_KEY = private_key.get_verifying_key().to_pem().decode('utf-8')
-except: pass
+if not os.path.exists(VAPID_PRIVATE_PEM):
+    # Генерируем настоящий приватный ключ ECDSA (P-256)
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    with open(VAPID_PRIVATE_PEM, "wb") as f:
+        f.write(pem)
+        
+    # Формируем правильный публичный ключ для браузера
+    public_numbers = private_key.public_key().public_numbers()
+    public_bytes = b'\x04' + public_numbers.x.to_bytes(32, 'big') + public_numbers.y.to_bytes(32, 'big')
+    pub_b64 = base64.urlsafe_b64encode(public_bytes).rstrip(b'=').decode('utf-8')
+    with open("vapid_public.txt", "w") as f:
+        f.write(pub_b64)
+
+# Читаем публичный ключ из файла
+with open("vapid_public.txt", "r") as f:
+    VAPID_PUBLIC_KEY = f.read().strip()
+# =================================================================
 
 def cleanup_old_files():
     while True:
@@ -52,7 +72,9 @@ def init_db():
 def serve_sw(): return app.send_static_file('sw.js')
 
 @app.route('/')
-def index(): return render_template('index.html', logged_in=session.get('auth'), vapid_public_key="BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuB-5-cEnEaAkmO2hHn1k_fNzc")
+def index(): 
+    # Отправляем настоящий публичный ключ в браузер!
+    return render_template('index.html', logged_in=session.get('auth'), vapid_public_key=VAPID_PUBLIC_KEY)
 
 @app.route('/uploads/<path:filename>')
 def download_file(filename): return send_from_directory(UPLOAD_FOLDER, filename)
@@ -117,17 +139,20 @@ def send_push_notification(target_username, sender_username):
             webpush(
                 subscription_info=subscription_info,
                 data=json.dumps({"title": "Secure Chat", "body": f"Новое сообщение от {sender_username} 🔒"}),
-                vapid_private_key="3KZv5MwX_1TzgY0pM-89-p21-z5-49-14-9-5",
+                vapid_private_key=VAPID_PRIVATE_PEM, # ИСПОЛЬЗУЕМ НАСТОЯЩИЙ СГЕНЕРИРОВАННЫЙ КЛЮЧ
                 vapid_claims={"sub": "mailto:admin@eprobot.ru"}
             )
-            print(f"🔔 Push отправлен пользователю {target_username}")
-        except Exception as e: print("Push error:", e)
+            print(f"🔔 Push успешно отправлен пользователю {target_username}!")
+        except WebPushException as ex:
+            print("Push failed:", repr(ex))
+        except Exception as e:
+            print("Push error:", e)
 
 @app.route('/receive', methods=['POST'])
 def receive():
     data = request.json
     sender = data.get('sender', '').split(':')[0]
-    target = data.get('target') # ИСПРАВЛЕНИЕ: Получаем Никнейм получателя
+    target = data.get('target')
     content = data.get('content')
     
     conn = sqlite3.connect('messages.db')
@@ -141,7 +166,6 @@ def receive():
     conn.commit()
     conn.close()
     
-    # ИСПРАВЛЕНИЕ: ВЫЗЫВАЕМ ФУНКЦИЮ PUSH-УВЕДОМЛЕНИЯ!
     if target: send_push_notification(target, sender)
         
     return jsonify({"status": "delivered"}), 200
@@ -165,7 +189,6 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        # ИСПРАВЛЕНИЕ: Передаем target серверу, чтобы он знал кому слать пуш!
         resp = requests.post(url, json={"sender": my_id, "target": target_username, "content": content}, timeout=10)
         if resp.status_code == 200: return "OK"
         raise Exception()
