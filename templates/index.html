@@ -357,10 +357,20 @@
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const rawData = e.target.result;
-                const resp = await fetch('/api/upload', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: rawData }) });
-                const { url } = await resp.json();
+                const resp = await fetch('/api/upload', { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ data: rawData }) 
+                });
+                
+                const { url } = await resp.json(); // url = "afd5b300...enc"
                 const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
-                await postMsg(encrypt(prefix + url, activeContact.key));
+                
+                // ИСПРАВЛЕНИЕ: Берем домен прямо из браузера (window.location.origin) 
+                // и склеиваем с именем файла! Получится ИДЕАЛЬНАЯ абсолютная ссылка!
+                const absoluteUrl = `${window.location.origin}/uploads/${url}`;
+                
+                await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
                 setStatus("Sent!");
             };
             reader.readAsDataURL(file);

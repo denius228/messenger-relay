@@ -95,13 +95,8 @@ def upload_file():
     filename = str(uuid.uuid4()) + ".enc"
     with open(os.path.join(UPLOAD_FOLDER, filename), 'w') as f: f.write(data)
     
-    # ИСПРАВЛЕНО: Возвращаем полную (абсолютную) ссылку на файл!
-    # Если мы за Caddy/Cloudflare, схема может сбоить, поэтому мы берем "host" из запроса
-    host = request.headers.get('Host', request.host)
-    # Формируем жесткую HTTPS ссылку (так как у нас везде SSL)
-    full_url = f"https://{host}/uploads/{filename}"
-    
-    return jsonify({"url": full_url})
+    # ВОЗВРАЩАЕМ ПРОСТО ИМЯ ФАЙЛА (Без путей и хостов!)
+    return jsonify({"url": filename})
 
 @app.route('/login', methods=['POST'])
 def login():
