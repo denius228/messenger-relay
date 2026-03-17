@@ -1,30 +1,24 @@
 version: '3.8'
 
 services:
-  # 1. Твой Мессенджер (Backend)
   messenger:
     build: .
     container_name: secure_chat_node
     restart: always
     volumes:
-      # Сохраняем базу данных и фотки на жестком диске сервера, 
-      # чтобы они не удалились при перезапуске контейнера!
-      - ./messages.db:/app/messages.db
+      # Пробрасываем только папку для фото/аудио, чтобы они не пропадали.
+      # База данных и ключи будут жить внутри контейнера (при пересоздании контейнера они сбросятся, для тестов это Ок).
       - ./uploads:/app/uploads
-      - ./vapid_private.pem:/app/vapid_private.pem
-      - ./vapid_public.txt:/app/vapid_public.txt
     ports:
-      # Пробрасываем порт (на случай если кто-то хочет использовать Cloudflare Tunnel вместо Caddy)
       - "5000:5000"
 
-  # 2. Caddy (Автоматический HTTPS и Reverse Proxy)
   caddy:
     image: caddy:2.7-alpine
     container_name: caddy_proxy
     restart: always
     ports:
-      - "80:80"     # Для получения сертификатов Let's Encrypt
-      - "443:443"   # Для защищенного трафика HTTPS
+      - "80:80"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
