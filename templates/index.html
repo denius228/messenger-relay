@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover">
     <title>Secure Chat</title>
     
     <link rel="manifest" href="/static/manifest.json">
@@ -14,37 +14,50 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     
     <style>
+        *, *::before, *::after { box-sizing: border-box; } /* Исключает выпирание элементов за края */
+        
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; /* Нативные системные шрифты */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background: #0e1621; 
             color: white; 
             margin: 0; 
+            padding: 0;
+            width: 100vw; 
+            height: 100dvh; 
             display: flex; 
             flex-direction: column; 
-            height: 100dvh; 
             overflow: hidden; 
-            overscroll-behavior: none; /* Запрещает "резиновый отскок" при прокрутке вверх/вниз */
-            -webkit-user-select: none; /* Запрещает выделять текст долгим нажатием (как на сайте) */
+            overscroll-behavior: none; 
+            -webkit-user-select: none; 
             user-select: none;
-            -webkit-tap-highlight-color: transparent; /* Убирает синее мигание при нажатии на кнопки */
+            -webkit-tap-highlight-color: transparent; 
         }
-        
-        /* Разрешаем выделять текст только внутри самих сообщений и полей ввода */
-        .msg, input {
-            -webkit-user-select: text;
-            user-select: text;
+
+        .header { 
+            background: #17212b; 
+            padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; 
+            text-align: center; 
+            font-weight: bold; 
+            border-bottom: 1px solid #111; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            flex-shrink: 0;
         }
+
+        .btn-small { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; flex-shrink: 0; }
         
         #contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; align-items: center; }
-        
-        /* ИСПРАВЛЕНО: Карточка контакта с крестиком */
         .contact-card { background: #242f3d; padding: 8px 15px; border-radius: 20px; font-size: 14px; white-space: nowrap; border: 1px solid transparent; display: flex; align-items: center; gap: 10px; }
         .contact-card.active { border-color: #40a7e3; background: #2b5278; }
         .contact-name { cursor: pointer; flex: 1; }
         .delete-btn { color: #ff4d4d; cursor: pointer; font-weight: bold; font-size: 12px; padding: 2px 5px; border-radius: 50%; }
-        .delete-btn:hover { background: rgba(255, 0, 0, 0.2); }
         
         #chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; background-image: url('https://www.transparenttextures.com/patterns/carbon-fibre.png'); scroll-behavior: smooth; }
+        
+        .msg, input { -webkit-user-select: text; user-select: text; }
+        
         .msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
@@ -55,13 +68,13 @@
         
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
-        input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; }
-        button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; }
+        input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; width: 100%; }
+        button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; flex-shrink: 0; }
         .recording-active { animation: pulse-red 1s infinite; }
         @keyframes pulse-red { 0% {color: #40a7e3} 50% {color: red} 100% {color: #40a7e3} }
         
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; text-align: center; }
-        .modal input { width: 92%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
+        .modal input { width: 100%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
         #qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
         #reader { width: 100%; margin-bottom: 15px; border-radius: 10px; overflow: hidden; }
     </style>
@@ -71,8 +84,8 @@
         <div style="padding:60px; text-align:center;">
             <h2 style="color:#40a7e3">SECURE LOGIN</h2>
             <form method="POST" action="/login">
-                <input type="password" name="password" placeholder="Password" autofocus style="width:80%; padding:15px; background:#242f3d; color:white; border:1px solid #40a7e3; border-radius:15px; text-align:center;">
-                <button type="submit" style="margin-top:30px; background:#40a7e3; color:white; padding:15px; width:80%; border-radius:15px; border:none; font-weight:bold;">ENTER</button>
+                <input type="password" name="password" placeholder="Password" autofocus style="width:100%; padding:15px; background:#242f3d; color:white; border:1px solid #40a7e3; border-radius:15px; text-align:center; box-sizing:border-box;">
+                <button type="submit" style="margin-top:30px; background:#40a7e3; color:white; padding:15px; width:100%; border-radius:15px; border:none; font-weight:bold; font-size:16px;">ENTER</button>
             </form>
         </div>
     {% else %}
@@ -99,7 +112,6 @@
             <h3>Add Contact</h3>
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
-            <!-- ВАЖНО: Разделяем Имя и URL -->
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
             <input type="text" id="new-ip" placeholder="External URL (Optional)">
             <input type="text" id="new-key" placeholder="Secret Key">
@@ -128,7 +140,6 @@
         const myHost = window.location.hostname; 
         let html5QrcodeScanner = null;
         let myUsername = localStorage.getItem('my_username') || "";
-
         let isUpdatingMessages = false; 
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
@@ -151,13 +162,10 @@
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') return alert("Уведомления заблокированы.");
 
-                const subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-                });
+                const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
 
                 await fetch('/api/push/subscribe', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username: myUsername, subscription: subscription })
                 });
 
@@ -217,8 +225,7 @@
         function startScanner() {
             if(html5QrcodeScanner) return;
             html5QrcodeScanner = new Html5Qrcode("reader");
-            html5QrcodeScanner.start(
-                { facingMode: "environment" }, { fps: 10, qrbox: { width: 200, height: 200 } },
+            html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 200, height: 200 } },
                 (decodedText) => {
                     try {
                         const data = JSON.parse(decodedText);
@@ -227,8 +234,7 @@
                         stopScanner();
                         setStatus("QR SCANNED!");
                     } catch(e) { alert("Invalid QR Code"); }
-                },
-                (err) => {}
+                }, (err) => {}
             );
         }
 
@@ -266,7 +272,6 @@
             } catch (e) { console.error(e); }
         }
 
-        // === ИСПРАВЛЕНО: ДОБАВЛЕН КРЕСТИК И ФУНКЦИЯ УДАЛЕНИЯ КОНТАКТОВ ===
         async function loadContacts() {
             const resp = await fetch('/api/contacts');
             const contacts = await resp.json();
@@ -276,28 +281,17 @@
                 contactMap[c[1]] = c[0];
                 return `<div class="contact-card ${activeContact?.username === c[0] ? 'active' : ''}">
                             <span class="contact-name" onclick="selectContact('${c[0]}', '${c[1]}', '${c[2]}')">${c[0]}</span>
-                            <span class="delete-btn" onclick="deleteContact('${c[0]}')" title="Удалить">❌</span>
+                            <span class="delete-btn" onclick="deleteContact('${c[0]}')" title="Delete">❌</span>
                         </div>`;
             }).join('');
         }
 
         async function deleteContact(name) {
-            if (!confirm(`Are you sure you want to delete contact: ${name}?`)) return;
-            
-            await fetch('/api/contacts', {
-                method: 'DELETE',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({name: name})
-            });
-            
-            // Если удалили активный контакт - очищаем экран чата
-            if (activeContact?.name === name) {
-                activeContact = null;
-                document.getElementById('chat').innerHTML = "";
-            }
+            if (!confirm(`Delete contact: ${name}?`)) return;
+            await fetch('/api/contacts', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name}) });
+            if (activeContact?.name === name) { activeContact = null; document.getElementById('chat').innerHTML = ""; }
             loadContacts();
         }
-        // ================================================================
 
         function selectContact(name, usernameOrIp, key) {
             if (activeContact?.name === name) return;
@@ -310,21 +304,14 @@
 
         async function addContact() {
             const username = document.getElementById('new-name').value.trim();
-            // Если ввели URL - используем его, если нет - используем никнейм (для поиска в Трекере)
             let ip = document.getElementById('new-ip').value.trim();
             if (!ip) ip = username; 
-            
             const key = document.getElementById('new-key').value.trim();
             if(!username || !key) return alert("Fill Username and Key!");
             
-            await fetch('/api/contacts', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({name: username, ip: ip, key: key})
-            });
+            await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: key}) });
             closeModals();
-            document.getElementById('new-name').value = ''; 
-            document.getElementById('new-ip').value = ''; 
-            document.getElementById('new-key').value = '';
+            document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-key').value = '';
             loadContacts();
         }
 
@@ -338,15 +325,8 @@
                 const chat = document.getElementById('chat');
                 
                 if (messages.length === lastMessageCount) return;
-
-                if (messages.length < lastMessageCount) {
-                    chat.innerHTML = "";
-                    lastMessageCount = 0;
-                }
-
-                if (lastMessageCount > 0 && messages.length > lastMessageCount) {
-                    try { let audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.play().catch(e=>{}); } catch(e) {}
-                }
+                if (messages.length < lastMessageCount) { chat.innerHTML = ""; lastMessageCount = 0; }
+                if (lastMessageCount > 0 && messages.length > lastMessageCount) { try { let audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.play().catch(e=>{}); } catch(e) {} }
 
                 const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 100;
                 
@@ -358,34 +338,21 @@
                     const mediaId = "m" + Math.random().toString(36).substr(2, 7);
 
                     let isMedia = false;
-                    if (text.startsWith("IMG:")) {
-                        content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`;
-                        isMedia = true;
-                    } else if (text.startsWith("VOICE:")) {
-                        content = `<audio id="${mediaId}" controls></audio>`;
-                        isMedia = true;
-                    }
+                    if (text.startsWith("IMG:")) { content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`; isMedia = true; } 
+                    else if (text.startsWith("VOICE:")) { content = `<audio id="${mediaId}" controls></audio>`; isMedia = true; }
                     
                     let div = document.createElement('div');
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
-                    if (isMedia && text.startsWith("IMG:")) {
-                        await displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
-                    } else if (isMedia && text.startsWith("VOICE:")) {
-                        await displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
-                    }
+                    if (isMedia && text.startsWith("IMG:")) await displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
+                    else if (isMedia && text.startsWith("VOICE:")) await displayMedia(text.replace("VOICE:",""), mediaId, activeContact.key);
                 }
                 
                 lastMessageCount = messages.length;
-                if (isAtBottom || messages.length > lastMessageCount) {
-                    setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 50); 
-                }
-                
-            } finally {
-                isUpdatingMessages = false; 
-            }
+                if (isAtBottom || messages.length > lastMessageCount) setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 50); 
+            } finally { isUpdatingMessages = false; }
         }
 
         async function sendText() {
@@ -402,9 +369,7 @@
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const encrypted = encrypt(e.target.result, activeContact.key);
-                const resp = await fetch('/api/upload', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: encrypted })
-                });
+                const resp = await fetch('/api/upload', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: encrypted }) });
                 const { url } = await resp.json();
                 const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
                 await postMsg(encrypt(prefix + url, activeContact.key));
@@ -415,21 +380,11 @@
 
         async function postMsg(content) {
             setStatus("Locating...");
-            
-            // Если мы общаемся внутри одного сервера (через Трекер)
             let targetUrl = await getFriendUrl(activeContact.username);
-            
-            // Если Трекер не знает друга (Федерация)
             if (!targetUrl) {
-                // ВАЖНО: Мы должны брать IP (URL) из базы контактов, а не имя!
-                // Когда мы загружаем контакты (loadContacts), c[1] - это URL.
-                // Нам нужно найти этот URL в нашей локальной копии списка:
                 const contactData = Object.entries(contactMap).find(([ip, name]) => name === activeContact.username);
-                if (contactData) {
-                    targetUrl = contactData[0]; // Берем IP/URL
-                }
+                if (contactData) targetUrl = contactData[0]; 
             }
-            
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
