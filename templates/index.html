@@ -113,7 +113,7 @@
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
-            <input type="text" id="new-ip" placeholder="External URL (Optional)">
+            <!-- ПОЛЕ URL УДАЛЕНО -->
             <input type="text" id="new-key" placeholder="Secret Key">
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
@@ -141,6 +141,7 @@
         let html5QrcodeScanner = null;
         let myUsername = localStorage.getItem('my_username') || "";
         let isUpdatingMessages = false; 
+        let scannedUrl = ""; // СКРЫТАЯ ПЕРЕМЕННАЯ ДЛЯ URL ИЗ QR-КОДА
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
@@ -218,7 +219,8 @@
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
             const key = document.getElementById('my-secret-key').value;
-            const data = JSON.stringify({ username: myUsername, key: key });
+            // ТИХО ЗАШИВАЕМ СВОЙ ХОСТ В QR-КОД
+            const data = JSON.stringify({ username: myUsername, key: key, url: window.location.hostname });
             new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
         }
 
@@ -231,6 +233,8 @@
                         const data = JSON.parse(decodedText);
                         document.getElementById('new-name').value = data.username;
                         document.getElementById('new-key').value = data.key;
+                        // СОХРАНЯЕМ URL НЕЗАМЕТНО ДЛЯ ПОЛЬЗОВАТЕЛЯ
+                        scannedUrl = data.url || ""; 
                         stopScanner();
                         setStatus("QR SCANNED!");
                     } catch(e) { alert("Invalid QR Code"); }
@@ -307,14 +311,19 @@
 
         async function addContact() {
             const username = document.getElementById('new-name').value.trim();
-            let ip = document.getElementById('new-ip').value.trim();
-            if (!ip) ip = username; 
             const key = document.getElementById('new-key').value.trim();
             if(!username || !key) return alert("Fill Username and Key!");
             
+            // Если URL пришел из QR-кода - берем его. Если вводили руками - считаем, что сервер общий (свой)
+            let ip = scannedUrl ? scannedUrl : window.location.hostname;
+            
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: key}) });
+            
             closeModals();
-            document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-key').value = '';
+            document.getElementById('new-name').value = ''; 
+            document.getElementById('new-key').value = '';
+            scannedUrl = ""; // Сбрасываем скрытый URL
+            
             loadContacts();
         }
 
