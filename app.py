@@ -141,11 +141,14 @@ def send_push_notification(target_username, sender_username):
                 vapid_private_key=VAPID_PRIVATE_PEM,
                 vapid_claims={"sub": "mailto:admin@eprobot.ru"},
                 ttl=86400,
-                headers={"Urgency": "high", "Topic": "new-message"} # ВЕРНУЛИ КАК БЫЛО
+                headers={"Urgency": "high", "Topic": "new-message"}
             )
             print(f"🔔 Push отправлен пользователю {target_username}!")
         except Exception as e:
             print("Push error:", e)
+    else:
+        # ДОБАВЬТЕ ЭТУ СТРОКУ, ЧТОБЫ ВИДЕТЬ ОШИБКУ В ТЕРМИНАЛЕ!
+        print(f"⚠️ ПУШ ОТМЕНЕН: Юзер {target_username} не подписался (не нажал 🔔) или нет в БД!")
 
 @app.route('/receive', methods=['POST'])
 def receive():
