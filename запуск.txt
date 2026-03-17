@@ -1,6 +1,0 @@
-Открой файл: nano app.py          
-
-
-python3 app.py          запуск на каждом сервере 
-
-cd C:\Users\denko\Desktop\messenger
