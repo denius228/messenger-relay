@@ -15,7 +15,7 @@ app.secret_key = 'HIFI_STABLE_V10'
 UPLOAD_FOLDER = 'uploads'
 DB_DIR = 'db_data'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(DB_DIR, exist_ok=True) # Создаем вечную папку
+os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, 'messages.db')
 USER_PASSWORD = "123"
@@ -66,7 +66,7 @@ threading.Thread(target=cleanup_old_files, daemon=True).start()
 # ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
 # ==========================================
 def init_db():
-    conn = sqlite3.connect(DB_PATH) # ИСПОЛЬЗУЕМ ВЕЧНУЮ БАЗУ
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS msgs (chat_with TEXT, sender TEXT, content TEXT, timestamp TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS contacts (name TEXT, ip TEXT, secret_key TEXT)')
@@ -94,8 +94,6 @@ def upload_file():
     data = request.json['data']
     filename = str(uuid.uuid4()) + ".enc"
     with open(os.path.join(UPLOAD_FOLDER, filename), 'w') as f: f.write(data)
-    
-    # ВОЗВРАЩАЕМ ПРОСТО ИМЯ ФАЙЛА (Без путей и хостов!)
     return jsonify({"url": filename})
 
 @app.route('/login', methods=['POST'])
@@ -154,8 +152,7 @@ def send_push_notification(target_username, sender_username):
                 vapid_private_key=VAPID_PRIVATE_PEM,
                 vapid_claims={"sub": "mailto:admin@eprobot.ru"},
                 ttl=86400,
-                # УБРАЛИ "Topic", чтобы уведомления не перезаписывали друг друга!
-                headers={"Urgency": "high"} 
+                headers={"Urgency": "high"} # Убрали Topic, чтобы пуши не удаляли друг друга
             )
             print(f"🔔 Push отправлен пользователю {target_username}!")
         except WebPushException as ex:

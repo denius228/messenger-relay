@@ -15,64 +15,29 @@
     
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: #0e1621; 
-            color: white; 
-            margin: 0; 
-            padding: 0;
-            width: 100vw; 
-            height: 100dvh; 
-            display: flex; 
-            flex-direction: column; 
-            overflow: hidden; 
-            overscroll-behavior: none; 
-            -webkit-user-select: none; 
-            user-select: none;
-            -webkit-tap-highlight-color: transparent; 
-        }
-
-        .header { 
-            background: #17212b; 
-            padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; 
-            text-align: center; 
-            font-weight: bold; 
-            border-bottom: 1px solid #111; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            flex-shrink: 0;
-        }
-
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0e1621; color: white; margin: 0; padding: 0; width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+        .header { background: #17212b; padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #111; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         .btn-small { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
         #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; flex-shrink: 0; }
-        
         #contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; align-items: center; }
         .contact-card { background: #242f3d; padding: 8px 15px; border-radius: 20px; font-size: 14px; white-space: nowrap; border: 1px solid transparent; display: flex; align-items: center; gap: 10px; }
         .contact-card.active { border-color: #40a7e3; background: #2b5278; }
         .contact-name { cursor: pointer; flex: 1; }
         .delete-btn { color: #ff4d4d; cursor: pointer; font-weight: bold; font-size: 12px; padding: 2px 5px; border-radius: 50%; }
-        
         #chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; background-image: url('https://www.transparenttextures.com/patterns/carbon-fibre.png'); scroll-behavior: smooth; }
-        
         .msg, input { -webkit-user-select: text; user-select: text; }
-        
         .msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
-        
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 150px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
-        
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; width: 100%; }
         button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; flex-shrink: 0; }
         .recording-active { animation: pulse-red 1s infinite; }
         @keyframes pulse-red { 0% {color: #40a7e3} 50% {color: red} 100% {color: #40a7e3} }
-        
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; text-align: center; }
         .modal input { width: 100%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
         #qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
@@ -113,7 +78,6 @@
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
-            <!-- ПОЛЕ URL УДАЛЕНО -->
             <input type="text" id="new-key" placeholder="Secret Key">
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
@@ -141,7 +105,7 @@
         let html5QrcodeScanner = null;
         let myUsername = localStorage.getItem('my_username') || "";
         let isUpdatingMessages = false; 
-        let scannedUrl = ""; // СКРЫТАЯ ПЕРЕМЕННАЯ ДЛЯ URL ИЗ QR-КОДА
+        let scannedUrl = ""; 
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
@@ -156,31 +120,27 @@
 
         async function enablePush() {
             if (!myUsername) return alert("Сначала создайте Profile!");
-            if (!('serviceWorker' in navigator) || !('PushManager' in window)) return alert("Push не поддерживается вашим браузером");
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                return alert("Web Push работает ТОЛЬКО по HTTPS или localhost!");
+            }
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                return alert("Ваш браузер не поддерживает Push-уведомления");
+            }
 
             try {
-                // 1. Запрашиваем права
                 const permission = await Notification.requestPermission();
-                if (permission !== 'granted') {
-                    return alert("Вы заблокировали уведомления. Разрешите их в настройках сайта.");
-                }
+                if (permission !== 'granted') return alert("Уведомления заблокированы в настройках браузера!");
 
-                // 2. Регистрируем Service Worker
                 await navigator.serviceWorker.register('/sw.js');
-                
-                // 3. Ждем, пока Service Worker полностью активируется
-                const registration = await navigator.serviceWorker.ready;
+                const registration = await navigator.serviceWorker.ready; // Ждем активации воркера
 
-                // 4. Подписываемся на Push
                 const subscription = await registration.pushManager.subscribe({ 
                     userVisibleOnly: true, 
                     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) 
                 });
 
-                // 5. Отправляем подписку на бэкенд
                 await fetch('/api/push/subscribe', {
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'},
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username: myUsername, subscription: subscription })
                 });
 
@@ -188,8 +148,8 @@
                 localStorage.setItem('push_enabled', 'true');
                 alert("Уведомления успешно включены! 🔔");
             } catch (error) { 
-                console.error(error);
-                alert("Ошибка настройки Push: " + error.message); 
+                console.error("Push Error: ", error);
+                alert("Ошибка Push: " + error.message); 
             }
         }
 
@@ -236,7 +196,6 @@
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
             const key = document.getElementById('my-secret-key').value;
-            // ТИХО ЗАШИВАЕМ СВОЙ ХОСТ В QR-КОД
             const data = JSON.stringify({ username: myUsername, key: key, url: window.location.hostname });
             new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
         }
@@ -250,7 +209,6 @@
                         const data = JSON.parse(decodedText);
                         document.getElementById('new-name').value = data.username;
                         document.getElementById('new-key').value = data.key;
-                        // СОХРАНЯЕМ URL НЕЗАМЕТНО ДЛЯ ПОЛЬЗОВАТЕЛЯ
                         scannedUrl = data.url || ""; 
                         stopScanner();
                         setStatus("QR SCANNED!");
@@ -267,33 +225,22 @@
             stopScanner();
         }
 
-        // =========================================================
-        // ИСПРАВЛЕННЫЙ ЗАГРУЗЧИК МЕДИА
-        // =========================================================
         async function displayMedia(url, elementId) {
             try {
-                // Скачиваем текстовый файл .enc с чужого сервера
                 const response = await fetch(url);
                 if (!response.ok) throw new Error("File not found");
-                
-                // Извлекаем строку Base64 (в которой уже зашит data:image/...)
                 const base64Data = await response.text(); 
-                
                 const el = document.getElementById(elementId);
                 if (el) {
                     el.onload = el.onloadedmetadata = () => {
                         const chat = document.getElementById('chat');
-                        // Сдвигаем скролл вниз, только если пользователь уже был внизу
                         if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) {
                             chat.scrollTop = chat.scrollHeight;
                         }
                     };
-                    // Вставляем содержимое прямо в src
                     el.src = base64Data; 
                 }
-            } catch (error) {
-                console.error("Ошибка загрузки медиа:", error);
-            }
+            } catch (error) { console.error("Ошибка загрузки медиа:", error); }
         }
 
         async function loadContacts() {
@@ -331,16 +278,13 @@
             const key = document.getElementById('new-key').value.trim();
             if(!username || !key) return alert("Fill Username and Key!");
             
-            // Если URL пришел из QR-кода - берем его. Если вводили руками - считаем, что сервер общий (свой)
             let ip = scannedUrl ? scannedUrl : window.location.hostname;
-            
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: key}) });
             
             closeModals();
             document.getElementById('new-name').value = ''; 
             document.getElementById('new-key').value = '';
-            scannedUrl = ""; // Сбрасываем скрытый URL
-            
+            scannedUrl = ""; 
             loadContacts();
         }
 
@@ -375,7 +319,6 @@
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
-                    // Запуск асинхронного скачивания медиа
                     if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId);
                     else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId);
                 }
@@ -400,16 +343,12 @@
             reader.onload = async (e) => {
                 const rawData = e.target.result;
                 const resp = await fetch('/api/upload', { 
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, 
                     body: JSON.stringify({ data: rawData }) 
                 });
-                
                 const { url } = await resp.json(); 
                 const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
-                
                 const absoluteUrl = `${window.location.origin}/uploads/${url}`;
-                
                 await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
                 setStatus("Sent!");
             };

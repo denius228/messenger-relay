@@ -8,7 +8,7 @@ self.addEventListener('push', function(event) {
         }
     } catch (e) {
         console.error("Ошибка парсинга пуш-данных:", e);
-        // Если данные не JSON, берем просто текст
+        // Если данные пришли не в JSON формате
         data = { body: event.data.text() };
     }
     
@@ -18,14 +18,9 @@ self.addEventListener('push', function(event) {
         body: data.body || "Новое зашифрованное сообщение",
         icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png",
         badge: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png",
-        vibrate: [200, 100, 200, 100, 200, 100, 400], // Ваша агрессивная вибрация
-        requireInteraction: true, // Пуш висит, пока не нажмут
-        
-        // ВАЖНО: Мы УБРАЛИ параметры `tag` и `renotify`. 
-        // Теперь каждое новое сообщение будет появляться отдельной плашкой, 
-        // и вы не пропустите ни одного текста!
-        
-        data: { url: "/" }
+        vibrate: [200, 100, 200, 100, 200, 100, 400], // Агрессивная вибрация
+        requireInteraction: true, // Пуш висит, пока пользователь не нажмет или не смахнет
+        data: { url: "/" } // Куда переходить при клике
     };
 
     // Показываем уведомление
