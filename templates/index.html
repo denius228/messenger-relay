@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Secure Voice Messenger</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#17212b">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <!-- Добавляем библиотеки для QR-кодов -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -214,6 +216,10 @@
             const messages = await resp.json();
             const chat = document.getElementById('chat');
             if (messages.length === lastMessageCount) return;
+            if (lastMessageCount > 0 && messages.length > lastMessageCount) {
+                let audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+                audio.play().catch(e => console.log("Браузер заблокировал звук до первого клика"));
+            }
 
             const isAtBottom = chat.scrollHeight - chat.clientHeight <= chat.scrollTop + 80;
             let html = "";

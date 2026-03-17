@@ -1,0 +1,16 @@
+{
+  "name": "Secure Chat E2EE",
+  "short_name": "SecureChat",
+  "description": "Decentralized P2P Messenger",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e1621",
+  "theme_color": "#17212b",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1041/1041916.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
