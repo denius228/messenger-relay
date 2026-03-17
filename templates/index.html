@@ -28,7 +28,10 @@
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #000; min-height: 100px; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
-        .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+        
+        /* ИСПРАВЛЕННЫЙ ОТСТУП СНИЗУ ДЛЯ ТЕЛЕФОНОВ */
+        .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
+        
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; }
         button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; }
@@ -62,6 +65,7 @@
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
+                <!-- ИСПРАВЛЕНА КЛАВИАТУРА НА ТЕЛЕФОНЕ (onfocus) -->
                 <input type="text" id="content" placeholder="Message..." onkeypress="if(event.key === 'Enter') sendText()" onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
                 <button id="voice-btn" onclick="toggleVoice()">🎤</button>
             </div>
@@ -72,7 +76,6 @@
             <h3>Add Contact</h3>
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
-            <!-- ВАЖНО: Вместо IP теперь вводим Никнейм друга -->
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
             <input type="text" id="new-key" placeholder="Secret Key">
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
@@ -81,7 +84,6 @@
 
         <div id="profile-modal" class="modal">
             <h3>My Profile</h3>
-            <!-- ВАЖНО: Вводим СВОЙ никнейм -->
             <input type="text" id="my-username" placeholder="My Username (e.g. @bob)">
             <input type="text" id="my-secret-key" placeholder="My Secret Key">
             <p style="font-size:12px; color:gray;">Show this QR to your friend</p>
@@ -100,10 +102,6 @@
         const myHost = window.location.hostname; 
         let html5QrcodeScanner = null;
 
-        // ВАЖНО: IP ТВОЕГО VPS (Главного Трекера)
-        const TRACKER_URL = "http://95.163.153.3:5000"; 
-        
-        // Достаем свой никнейм из локального хранилища браузера
         let myUsername = localStorage.getItem('my_username') || "";
 
         function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
@@ -114,28 +112,26 @@
 
         function setStatus(text) { document.getElementById('status-bar').innerText = text.toUpperCase(); }
 
-        // --- ЛОГИКА ТРЕКЕРА (АВТОМАТИЗАЦИЯ ССЫЛОК) ---
+        // ИСПОЛЬЗУЕМ ОТНОСИТЕЛЬНЫЕ ПУТИ (Без IP, чтобы не было ошибок протокола)
         async function pingTracker() {
             if (!myUsername) return;
             try {
-                await fetch(`${TRACKER_URL}/api/tracker/update`, {
+                await fetch(`/api/tracker/update`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username: myUsername, url: myHost })
                 });
-                console.log(`[Tracker] Я нахожусь на ${myHost}`);
-            } catch(e) { console.error("Tracker offline", e); }
+            } catch(e) {}
         }
 
         async function getFriendUrl(friendUsername) {
             try {
-                const resp = await fetch(`${TRACKER_URL}/api/tracker/get?username=${encodeURIComponent(friendUsername)}`);
+                const resp = await fetch(`/api/tracker/get?username=${encodeURIComponent(friendUsername)}`);
                 const data = await resp.json();
                 if (data.url) return data.url;
             } catch(e) {}
             return null;
         }
-        // ----------------------------------------------
 
         function showProfile() {
             document.getElementById('profile-modal').style.display = 'block';
@@ -153,14 +149,13 @@
             localStorage.setItem('my_username', myUsername);
             localStorage.setItem('my_key', myKey);
             generateQR();
-            pingTracker(); // Сразу сообщаем трекеру, где мы
+            pingTracker();
             alert("Profile Saved!");
         }
 
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
             const key = document.getElementById('my-secret-key').value;
-            // Теперь в QR коде мы зашифровываем не IP, а НИКНЕЙМ
             const data = JSON.stringify({ username: myUsername, key: key });
             new QRCode(document.getElementById("qr-code"), {
                 text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff"
@@ -217,7 +212,6 @@
             const list = document.getElementById('contact-list');
             contactMap = {};
             list.innerHTML = contacts.map(c => {
-                // c[0] - имя, c[1] - IP (но теперь там может быть Username)
                 contactMap[c[1]] = c[0];
                 return `<div class="contact-card ${activeContact?.username === c[0] ? 'active' : ''}" onclick="selectContact('${c[0]}', '${c[1]}', '${c[2]}')">${c[0]}</div>`;
             }).join('');
@@ -225,7 +219,6 @@
 
         function selectContact(name, usernameOrIp, key) {
             if (activeContact?.name === name) return;
-            // Мы сохраняем контакт: name - имя, username - логин (или старый IP)
             activeContact = {name, username: name, key};
             lastMessageCount = 0;
             document.getElementById('chat').innerHTML = "";
@@ -234,7 +227,6 @@
         }
 
         async function addContact() {
-            // Теперь name и ip - это одно и то же (Никнейм)
             const username = document.getElementById('new-name').value.trim();
             const key = document.getElementById('new-key').value.trim();
             if(!username || !key) return alert("Fill all fields");
@@ -242,7 +234,6 @@
             await fetch('/api/contacts', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                // Мы сохраняем Username в поле IP в базе данных, чтобы не ломать старую архитектуру!
                 body: JSON.stringify({name: username, ip: username, key: key})
             });
             closeModals();
@@ -252,7 +243,6 @@
 
         async function loadMessages() {
             if (!activeContact) return;
-            // Просим сообщения по никнейму
             const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
             const messages = await resp.json();
             const chat = document.getElementById('chat');
@@ -295,6 +285,25 @@
             el.value = '';
         }
 
+        async function uploadMedia(file) {
+            if (!file || !activeContact) return;
+            setStatus("Encrypting Hi-Fi...");
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const encrypted = encrypt(e.target.result, activeContact.key);
+                const resp = await fetch('/api/upload', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ data: encrypted })
+                });
+                const { url } = await resp.json();
+                const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
+                await postMsg(encrypt(prefix + url, activeContact.key));
+                setStatus("Sent!");
+            };
+            reader.readAsDataURL(file);
+        }
+
         async function postMsg(content) {
             setStatus("Locating...");
             const currentFriendUrl = await getFriendUrl(activeContact.username);
@@ -304,7 +313,7 @@
             const resp = await fetch('/send_message', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                // НОВОЕ: Добавили передачу target_username на сервер
+                // ИСПРАВЛЕНО: Передаем Никнейм друга (target_username), чтобы сообщения не исчезали!
                 body: `target_ip=${currentFriendUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
             });
             const resText = await resp.text();
@@ -312,13 +321,37 @@
             loadMessages();
         }
 
-        // Обновляем трекер каждые 30 секунд (чтобы он всегда знал, что мы онлайн и где мы)
+        // Автоматический обмен почтой между узлами
+        async function pollRelays() {
+            if (!activeContact) return;
+            const resp = await fetch('/api/contacts');
+            const contacts = await resp.json();
+            for (let c of contacts) {
+                const friendUsername = c[0];
+                const friendUrl = await getFriendUrl(friendUsername);
+                if (friendUrl) {
+                    try {
+                        const mailResp = await fetch(`https://${friendUrl}/api/mailbox/check?target_id=${myHost}`);
+                        const data = await mailResp.json();
+                        if (data.received > 0) { 
+                            await fetch('/api/messages/save_synced', {
+                                method: 'POST', headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({messages: data.messages})
+                            });
+                            setStatus("New Mail Sync!"); 
+                            loadMessages(); 
+                        }
+                    } catch(e) {}
+                }
+            }
+        }
+
         setInterval(pingTracker, 30000);
         setInterval(loadMessages, 3000);
+        setInterval(pollRelays, 10000); 
         
         if (document.getElementById('contact-list')) {
             loadContacts();
-            // При загрузке сразу сообщаем о себе трекеру
             setTimeout(pingTracker, 2000);
         }
     </script>
