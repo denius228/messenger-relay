@@ -275,6 +275,7 @@
 
         // === ИСПРАВЛЕНИЕ ДУБЛИКАТОВ (Замок isUpdatingMessages) ===
         async function loadMessages() {
+            // СТРОГИЙ ЗАМОК: Если чат уже обновляется (грузятся фото/аудио), не мешаем ему!
             if (!activeContact || isUpdatingMessages) return;
             isUpdatingMessages = true; 
             
@@ -317,7 +318,7 @@
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
-                    // ИСПРАВЛЕНИЕ: Мы ЖДЕМ завершения расшифровки (await), прежде чем идти дальше!
+                    // ВАЖНО: Ждем полной загрузки и расшифровки медиафайла (await)
                     if (isMedia && text.startsWith("IMG:")) {
                         await displayMedia(text.replace("IMG:",""), mediaId, activeContact.key);
                     } else if (isMedia && text.startsWith("VOICE:")) {
@@ -327,10 +328,13 @@
                 
                 lastMessageCount = messages.length;
                 if (isAtBottom || messages.length > lastMessageCount) {
-                    setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 50); // Ускорили прокрутку
+                    setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 50);
                 }
                 
+            } catch (error) {
+                console.error("Ошибка загрузки сообщений:", error);
             } finally {
+                // Снимаем замок только когда всё полностью загрузилось!
                 isUpdatingMessages = false; 
             }
         }
