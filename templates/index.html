@@ -15,29 +15,97 @@
     
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0e1621; color: white; margin: 0; padding: 0; width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-        .header { background: #17212b; padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #111; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #0e1621; 
+            color: white; 
+            margin: 0; 
+            padding: 0;
+            width: 100vw; 
+            height: 100dvh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+            overscroll-behavior: none; 
+            -webkit-user-select: none; 
+            user-select: none;
+            -webkit-tap-highlight-color: transparent; 
+        }
+
+        .header { 
+            background: #17212b; 
+            padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; 
+            text-align: center; 
+            font-weight: bold; 
+            border-bottom: 1px solid #111; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            flex-shrink: 0;
+        }
+
         .btn-small { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
         #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; flex-shrink: 0; }
+        
         #contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; align-items: center; }
         .contact-card { background: #242f3d; padding: 8px 15px; border-radius: 20px; font-size: 14px; white-space: nowrap; border: 1px solid transparent; display: flex; align-items: center; gap: 10px; }
         .contact-card.active { border-color: #40a7e3; background: #2b5278; }
         .contact-name { cursor: pointer; flex: 1; }
         .delete-btn { color: #ff4d4d; cursor: pointer; font-weight: bold; font-size: 12px; padding: 2px 5px; border-radius: 50%; }
+        
         #chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; background-image: url('https://www.transparenttextures.com/patterns/carbon-fibre.png'); scroll-behavior: smooth; }
+        
         .msg, input { -webkit-user-select: text; user-select: text; }
+        
         .msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
+        
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 150px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
+        
+        /* Стили видео-кружочков в чате */
+        .msg video.circle-video { 
+            width: 220px; 
+            height: 220px; 
+            border-radius: 50%; 
+            object-fit: cover; 
+            background: #182533; 
+            margin-top: 5px; 
+            border: 3px solid #2b5278; 
+        }
+
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; width: 100%; }
         button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; flex-shrink: 0; }
         .recording-active { animation: pulse-red 1s infinite; }
         @keyframes pulse-red { 0% {color: #40a7e3} 50% {color: red} 100% {color: #40a7e3} }
+        
+        /* Предпросмотр камеры над полем ввода */
+        #video-preview-container {
+            display: none;
+            position: absolute;
+            bottom: 70px;
+            right: 15px;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 3px solid #ff4d4d;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 100;
+            background: black;
+        }
+        #video-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Зеркалим фронталку */
+        }
+
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; text-align: center; }
         .modal input { width: 100%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
         #qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
@@ -63,11 +131,18 @@
         <div id="status-bar">SYSTEM READY</div>
         <div id="contact-list"></div>
         <div id="chat"></div>
+        
+        <!-- Контейнер для записи видео-кружочка -->
+        <div id="video-preview-container">
+            <video id="video-preview" autoplay muted playsinline></video>
+        </div>
+
         <div class="controls">
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
                 <input type="text" id="content" placeholder="Message..." onkeypress="if(event.key === 'Enter') sendText()" onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
+                <button id="video-btn" onclick="toggleVideo()" style="margin-right: 5px;">📷</button>
                 <button id="voice-btn" onclick="toggleVoice()">🎤</button>
             </div>
             <button onclick="sendText()">➤</button>
@@ -78,6 +153,7 @@
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
+            <input type="text" id="new-ip" placeholder="External URL (Optional)">
             <input type="text" id="new-key" placeholder="Secret Key">
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
@@ -98,14 +174,19 @@
         let lastMessageCount = 0;
         let activeContact = null;
         let contactMap = {};
+        
         let mediaRecorder;
         let audioChunks = [];
         let audioCtx;
+        
+        let videoRecorder;
+        let videoChunks = [];
+        let videoStream;
+
         const myHost = window.location.hostname; 
         let html5QrcodeScanner = null;
         let myUsername = localStorage.getItem('my_username') || "";
         let isUpdatingMessages = false; 
-        let scannedUrl = ""; 
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
@@ -127,20 +208,16 @@
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') return alert("Уведомления заблокированы.");
 
-                // --- НОВАЯ МАГИЯ НАЧИНАЕТСЯ ЗДЕСЬ ---
-                // Ищем старую, застрявшую подписку
+                // Убиваем старую подписку, если ключи сервера сменились (Фикс ошибки)
                 let subscription = await registration.pushManager.getSubscription();
                 if (subscription) {
-                    // Если нашли старую - принудительно удаляем её (решает ту самую ошибку из скриншота!)
                     await subscription.unsubscribe();
                 }
 
-                // Теперь спокойно создаем НОВУЮ подписку с текущим ключом сервера
                 subscription = await registration.pushManager.subscribe({ 
                     userVisibleOnly: true, 
                     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) 
                 });
-                // --- НОВАЯ МАГИЯ ЗАКАНЧИВАЕТСЯ ---
 
                 await fetch('/api/push/subscribe', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -198,7 +275,7 @@
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
             const key = document.getElementById('my-secret-key').value;
-            const data = JSON.stringify({ username: myUsername, key: key, url: window.location.hostname });
+            const data = JSON.stringify({ username: myUsername, key: key });
             new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
         }
 
@@ -211,7 +288,6 @@
                         const data = JSON.parse(decodedText);
                         document.getElementById('new-name').value = data.username;
                         document.getElementById('new-key').value = data.key;
-                        scannedUrl = data.url || ""; 
                         stopScanner();
                         setStatus("QR SCANNED!");
                     } catch(e) { alert("Invalid QR Code"); }
@@ -242,7 +318,11 @@
                     };
                     el.src = base64Data; 
                 }
-            } catch (error) { console.error("Ошибка загрузки медиа:", error); }
+            } catch (error) {
+                console.log("Медиа удалено сервером:", url);
+                const el = document.getElementById(elementId);
+                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа удалено]</small>";
+            }
         }
 
         async function loadContacts() {
@@ -277,16 +357,14 @@
 
         async function addContact() {
             const username = document.getElementById('new-name').value.trim();
+            let ip = document.getElementById('new-ip').value.trim();
+            if (!ip) ip = username; 
             const key = document.getElementById('new-key').value.trim();
             if(!username || !key) return alert("Fill Username and Key!");
             
-            let ip = scannedUrl ? scannedUrl : window.location.hostname;
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: key}) });
-            
             closeModals();
-            document.getElementById('new-name').value = ''; 
-            document.getElementById('new-key').value = '';
-            scannedUrl = ""; 
+            document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-key').value = '';
             loadContacts();
         }
 
@@ -313,8 +391,16 @@
                     const mediaId = "m" + Math.random().toString(36).substr(2, 7);
 
                     let isMedia = false;
-                    if (text.startsWith("IMG:")) { content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`; isMedia = true; } 
-                    else if (text.startsWith("VOICE:")) { content = `<audio id="${mediaId}" controls></audio>`; isMedia = true; }
+                    if (text.startsWith("IMG:")) { 
+                        content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`; 
+                        isMedia = true; 
+                    } else if (text.startsWith("VOICE:")) { 
+                        content = `<audio id="${mediaId}" controls></audio>`; 
+                        isMedia = true; 
+                    } else if (text.startsWith("VIDEO:")) { 
+                        content = `<video id="${mediaId}" class="circle-video" controls playsinline loop preload="metadata"></video>`; 
+                        isMedia = true; 
+                    }
                     
                     let div = document.createElement('div');
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
@@ -323,6 +409,7 @@
                     
                     if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId);
                     else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId);
+                    else if (isMedia && text.startsWith("VIDEO:")) displayMedia(text.replace("VIDEO:",""), mediaId);
                 }
                 
                 lastMessageCount = messages.length;
@@ -345,12 +432,19 @@
             reader.onload = async (e) => {
                 const rawData = e.target.result;
                 const resp = await fetch('/api/upload', { 
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
                     body: JSON.stringify({ data: rawData }) 
                 });
+                
                 const { url } = await resp.json(); 
-                const prefix = file.type.startsWith('image') ? "IMG:" : "VOICE:";
+                
+                let prefix = "IMG:";
+                if (file.type.startsWith('audio')) prefix = "VOICE:";
+                else if (file.type.startsWith('video')) prefix = "VIDEO:";
+                
                 const absoluteUrl = `${window.location.origin}/uploads/${url}`;
+                
                 await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
                 setStatus("Sent!");
             };
@@ -374,6 +468,47 @@
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
             loadMessages();
+        }
+
+        async function toggleVideo() {
+            const btn = document.getElementById('video-btn');
+            const previewContainer = document.getElementById('video-preview-container');
+            const previewVideo = document.getElementById('video-preview');
+
+            if (!videoRecorder || videoRecorder.state === 'inactive') {
+                try {
+                    videoStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 480 } }, 
+                        audio: { echoCancellation: true, noiseSuppression: true } 
+                    });
+                    
+                    previewVideo.srcObject = videoStream;
+                    previewContainer.style.display = 'block';
+
+                    let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
+                    videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 1000000 });
+                    
+                    videoChunks = [];
+                    videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
+                    
+                    videoRecorder.onstop = () => { 
+                        previewContainer.style.display = 'none';
+                        videoStream.getTracks().forEach(t => t.stop()); 
+                        
+                        const videoBlob = new Blob(videoChunks, {type: mimeType});
+                        const file = new File([videoBlob], "circle.webm", { type: "video/webm" });
+                        uploadMedia(file); 
+                    };
+                    
+                    videoRecorder.start();
+                    btn.classList.add('recording-active');
+                    setStatus("Recording Video...");
+                } catch(e) { alert("Ошибка камеры: " + e.message); }
+            } else {
+                videoRecorder.stop();
+                btn.classList.remove('recording-active');
+                setStatus("Encoding Video...");
+            }
         }
 
         async function toggleVoice() {
