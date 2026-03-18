@@ -74,7 +74,7 @@
             object-fit: cover; 
             background: #182533; 
             margin-top: 5px; 
-            border: 3px solid #2b5278; 
+            border: 3px solid #40a7e3; 
         }
 
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
@@ -132,7 +132,7 @@
         <div id="contact-list"></div>
         <div id="chat"></div>
         
-        <!-- Контейнер для записи видео-кружочка -->
+        <!-- Контейнер для превью видео-кружочка -->
         <div id="video-preview-container">
             <video id="video-preview" autoplay muted playsinline></video>
         </div>
@@ -235,15 +235,13 @@
             return CryptoJS.AES.encrypt(text, key).toString(); 
         }
         
+        // СТАРЫЙ, НАДЕЖНЫЙ МЕХАНИЗМ РАСШИФРОВКИ!
         function decrypt(cipherText, key) {
             try { 
                 const bytes = CryptoJS.AES.decrypt(cipherText, key); 
-                const dec = bytes.toString(CryptoJS.enc.Utf8);
-                // Если расшифровалась пустота - значит ключи не совпали
-                if (!dec) return "🔒 [Ключ не подходит]";
-                return dec;
+                return bytes.toString(CryptoJS.enc.Utf8) || "[Ошибка Ключа]"; 
             }
-            catch (e) { return "🔒 [Ошибка шифра]"; }
+            catch (e) { return "[Зашифровано]"; }
         }
 
         function setStatus(text) { document.getElementById('status-bar').innerText = text.toUpperCase(); }
@@ -411,8 +409,7 @@
                     
                     let div = document.createElement('div');
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
-                    // Если контент пустой, пишем об этом явно!
-                    div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content === "" ? "<i>Пусто</i>" : content} <small>${m[2]}</small>`;
+                    div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
                     if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId);
@@ -459,6 +456,7 @@
             reader.readAsDataURL(file);
         }
 
+        // ВЕРНУЛИ НАДЕЖНЫЙ МЕТОД ОТПРАВКИ ИЗ ПРЕДЫДУЩЕЙ ВЕРСИИ
         async function postMsg(content) {
             setStatus("Locating...");
             let targetUrl = await getFriendUrl(activeContact.username);
@@ -469,18 +467,9 @@
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
-            
-            // ЖЕЛЕЗОБЕТОННАЯ ПЕРЕДАЧА ДАННЫХ (без потери + и = в шифре)
-            const formData = new URLSearchParams();
-            formData.append('target_ip', targetUrl);
-            formData.append('target_username', activeContact.username);
-            formData.append('content', content);
-            formData.append('my_id', myUsername);
-
             const resp = await fetch('/send_message', {
-                method: 'POST', 
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: formData.toString()
+                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: `target_ip=${targetUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${encodeURIComponent(myUsername)}`
             });
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
