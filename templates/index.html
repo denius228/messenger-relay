@@ -231,10 +231,19 @@
             }
         }
 
-        function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
+        function encrypt(text, key) { 
+            return CryptoJS.AES.encrypt(text, key).toString(); 
+        }
+        
         function decrypt(cipherText, key) {
-            try { const bytes = CryptoJS.AES.decrypt(cipherText, key); return bytes.toString(CryptoJS.enc.Utf8) || "[Error]"; }
-            catch (e) { return "[Encrypted]"; }
+            try { 
+                const bytes = CryptoJS.AES.decrypt(cipherText, key); 
+                const dec = bytes.toString(CryptoJS.enc.Utf8);
+                // Если расшифровалась пустота - значит ключи не совпали
+                if (!dec) return "🔒 [Ключ не подходит]";
+                return dec;
+            }
+            catch (e) { return "🔒 [Ошибка шифра]"; }
         }
 
         function setStatus(text) { document.getElementById('status-bar').innerText = text.toUpperCase(); }
@@ -318,7 +327,6 @@
                     el.src = base64Data; 
                 }
             } catch (error) {
-                console.log("Медиа удалено сервером:", url);
                 const el = document.getElementById(elementId);
                 if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа удалено]</small>";
             }
@@ -403,7 +411,8 @@
                     
                     let div = document.createElement('div');
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
-                    div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
+                    // Если контент пустой, пишем об этом явно!
+                    div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content === "" ? "<i>Пусто</i>" : content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
                     if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId);
@@ -460,9 +469,18 @@
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
+            
+            // ЖЕЛЕЗОБЕТОННАЯ ПЕРЕДАЧА ДАННЫХ (без потери + и = в шифре)
+            const formData = new URLSearchParams();
+            formData.append('target_ip', targetUrl);
+            formData.append('target_username', activeContact.username);
+            formData.append('content', content);
+            formData.append('my_id', myUsername);
+
             const resp = await fetch('/send_message', {
-                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: `target_ip=${targetUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${myUsername}`
+                method: 'POST', 
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: formData.toString()
             });
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
@@ -476,7 +494,6 @@
 
             if (!videoRecorder || videoRecorder.state === 'inactive') {
                 try {
-                    // Убраны жесткие рамки 480x480, чтобы Android не ломался!
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: "user" }, 
                         audio: { echoCancellation: true, noiseSuppression: true } 
