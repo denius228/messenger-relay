@@ -170,7 +170,7 @@
         </div>
     {% endif %}
 
-    <script>
+    <script>1111111111111111111111111111111111111111111111111111111111111111
         let lastMessageCount = 0;
         let activeContact = null;
         let contactMap = {};
@@ -208,7 +208,6 @@
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') return alert("Уведомления заблокированы.");
 
-                // Убиваем старую подписку, если ключи сервера сменились (Фикс ошибки)
                 let subscription = await registration.pushManager.getSubscription();
                 if (subscription) {
                     await subscription.unsubscribe();
@@ -440,8 +439,8 @@
                 const { url } = await resp.json(); 
                 
                 let prefix = "IMG:";
-                if (file.type.startsWith('audio')) prefix = "VOICE:";
-                else if (file.type.startsWith('video')) prefix = "VIDEO:";
+                if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
+                else if (file.type && file.type.startsWith('video')) prefix = "VIDEO:";
                 
                 const absoluteUrl = `${window.location.origin}/uploads/${url}`;
                 
@@ -477,8 +476,9 @@
 
             if (!videoRecorder || videoRecorder.state === 'inactive') {
                 try {
+                    // Убраны жесткие рамки 480x480, чтобы Android не ломался!
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 480 } }, 
+                        video: { facingMode: "user" }, 
                         audio: { echoCancellation: true, noiseSuppression: true } 
                     });
                     
