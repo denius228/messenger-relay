@@ -153,22 +153,28 @@ def send_push_notification(target_username, sender_username):
 @app.route('/receive', methods=['POST'])
 def receive():
     data = request.json
-    sender = data.get('sender', '').split(':')[0]
+    
+    # Теперь мы получаем ИМЯ отправителя (например, 'Phone'), а не его IP-адрес!
+    sender_username = data.get('sender_username') 
+    
     target = data.get('target')
     content = data.get('content')
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT ip FROM contacts WHERE name = ? OR ip = ?", (sender, sender))
+    
+    # Анти-спам: Ищем в контактах ИМЕННО ИМЯ отправителя
+    c.execute("SELECT ip FROM contacts WHERE name = ?", (sender_username,))
     if not c.fetchone():
         conn.close()
-        return jsonify({"error": f"Anti-Spam: Unknown sender {sender}"}), 403
+        return jsonify({"error": f"Anti-Spam: Unknown sender username '{sender_username}'"}), 403
 
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (sender, sender, content, datetime.datetime.now().strftime("%H:%M")))
+    # Если нашли в контактах - пропускаем и сохраняем!
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (sender_username, sender_username, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     conn.close()
     
-    if target: send_push_notification(target, sender)
+    if target: send_push_notification(target, sender_username)
         
     return jsonify({"status": "delivered"}), 200
 
@@ -176,15 +182,11 @@ def receive():
 def send():
     if not session.get('auth'): return "No Auth", 403
     
-    # ПЕРЕВЕЛИ НА ЧИСТЫЙ JSON
     data = request.json
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
     target_username = data.get('target_username')
     content = data.get('content')
-    
-    my_id = data.get('my_id')
-    if not my_id: my_id = request.host
-    my_id = my_id.replace('https://','').replace('http://','').split(':')[0]
+    my_username = data.get('my_id') # Это ВАШЕ имя профиля (отправителя)
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -194,13 +196,14 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        resp = requests.post(url, json={"sender": my_id, "target": target_username, "content": content}, timeout=10)
+        # ОТПРАВЛЯЕМ ИМЯ ОТПРАВИТЕЛЯ (sender_username), А НЕ IP!
+        resp = requests.post(url, json={"sender_username": my_username, "target": target_username, "content": content}, timeout=10)
         if resp.status_code == 200: return "OK"
         raise Exception()
     except:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_id, content, datetime.datetime.now().strftime("%H:%M")))
+        c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_username, content, datetime.datetime.now().strftime("%H:%M")))
         conn.commit()
         conn.close()
         return "Relayed"
