@@ -175,11 +175,14 @@ def receive():
 @app.route('/send_message', methods=['POST'])
 def send():
     if not session.get('auth'): return "No Auth", 403
-    target = request.form.get('target_ip').replace('https://','').replace('http://','').strip('/')
-    target_username = request.form.get('target_username')
-    content = request.form.get('content')
     
-    my_id = request.form.get('my_id')
+    # ПЕРЕВЕЛИ НА ЧИСТЫЙ JSON
+    data = request.json
+    target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
+    target_username = data.get('target_username')
+    content = data.get('content')
+    
+    my_id = data.get('my_id')
     if not my_id: my_id = request.host
     my_id = my_id.replace('https://','').replace('http://','').split(':')[0]
     
