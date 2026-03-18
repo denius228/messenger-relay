@@ -154,27 +154,31 @@ def send_push_notification(target_username, sender_username):
 def receive():
     data = request.json
     
-    # Теперь мы получаем ИМЯ отправителя (например, 'Phone'), а не его IP-адрес!
-    sender_username = data.get('sender_username') 
-    
+    # Получаем то, что прислал собеседник (имя ИЛИ домен сервера, если это старый Докер)
+    raw_sender = data.get('sender_username') or data.get('sender', '').split(':')[0]
     target = data.get('target')
     content = data.get('content')
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Анти-спам: Ищем в контактах ИМЕННО ИМЯ отправителя
-    c.execute("SELECT ip FROM contacts WHERE name = ?", (sender_username,))
-    if not c.fetchone():
+    # УМНЫЙ АНТИ-СПАМ: Ищем совпадение либо по имени, либо по External URL (для Докера)
+    c.execute("SELECT name FROM contacts WHERE name = ? OR ip = ?", (raw_sender, raw_sender))
+    row = c.fetchone()
+    
+    if not row:
         conn.close()
-        return jsonify({"error": f"Anti-Spam: Unknown sender username '{sender_username}'"}), 403
+        return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
 
-    # Если нашли в контактах - пропускаем и сохраняем!
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (sender_username, sender_username, content, datetime.datetime.now().strftime("%H:%M")))
+    # Если нашли контакт, достаем его НАСТОЯЩЕЕ ИМЯ из нашей записной книжки
+    real_friend_name = row[0]
+
+    # Сохраняем сообщение под правильным именем, чтобы оно появилось в нужном чате!
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     conn.close()
     
-    if target: send_push_notification(target, sender_username)
+    if target: send_push_notification(target, real_friend_name)
         
     return jsonify({"status": "delivered"}), 200
 
@@ -186,7 +190,7 @@ def send():
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
     target_username = data.get('target_username')
     content = data.get('content')
-    my_username = data.get('my_id') # Это ВАШЕ имя профиля (отправителя)
+    my_username = data.get('my_id') 
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -196,8 +200,14 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        # ОТПРАВЛЯЕМ ИМЯ ОТПРАВИТЕЛЯ (sender_username), А НЕ IP!
-        resp = requests.post(url, json={"sender_username": my_username, "target": target_username, "content": content}, timeout=10)
+        # Отправляем данные СРАЗУ В ДВУХ ФОРМАТАХ (чтобы старый Докер тоже нас понял!)
+        resp = requests.post(url, json={
+            "sender": my_username, 
+            "sender_username": my_username, 
+            "target": target_username, 
+            "content": content
+        }, timeout=10)
+        
         if resp.status_code == 200: return "OK"
         raise Exception()
     except:
