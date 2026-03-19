@@ -74,7 +74,7 @@
         <div id="contact-list"></div>
         <div id="chat"></div>
         
-        <!-- ИНДИКАТОР ПЕЧАТИ (ПОЯВЛЯЕТСЯ ТУТ) -->
+        <!-- ИНДИКАТОР СТАТУСОВ (ПЕЧАТАЕТ/ЗАПИСЫВАЕТ) -->
         <div id="typing-indicator" style="display:none; padding: 5px 15px; font-size: 12px; color: #40a7e3; font-style: italic; background: #17212b;"></div>
         
         <div id="video-preview-container">
@@ -85,9 +85,8 @@
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
-                <!-- ОЧЕНЬ ВАЖНО: ДОБАВЛЕН oninput="notifyTyping()" ДЛЯ КАРАНДАША! -->
                 <input type="text" id="content" placeholder="Message..." 
-                    oninput="notifyTyping()" 
+                    oninput="notifyTyping('typing')" 
                     onkeypress="if(event.key === 'Enter') sendText()" 
                     onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
                 
@@ -123,15 +122,16 @@
         let lastMessageCount = 0;
         let activeContact = null;
         let contactMap = {};
-        let localMediaCache = {}; 
         
         let mediaRecorder;
         let audioChunks = [];
         let audioCtx;
+        let audioInterval;
         
         let videoRecorder;
         let videoChunks = [];
         let videoStream;
+        let videoInterval;
 
         const myHost = window.location.hostname; 
         let html5QrcodeScanner = null;
@@ -141,10 +141,11 @@
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
         // ==========================================
-        // ⚡ WEBSOCKETS И ИНДИКАТОР "ПЕЧАТАЕТ..."
+        // ⚡ WEBSOCKETS И ИНДИКАТОРЫ СТАТУСОВ
         // ==========================================
         const socket = io(); 
         let typingTimeout = null;
+        let lastTypingTime = 0;
         
         socket.on('new_message', function(data) {
             isUpdatingMessages = false; 
@@ -156,7 +157,6 @@
             if (activeContact && activeContact.username === data.sender) {
                 const indicator = document.getElementById('typing-indicator');
                 
-                // РАСПОЗНАЕМ СТАТУС!
                 if (data.status_type === 'audio') {
                     indicator.innerText = `${data.sender} записывает аудио... 🎤`;
                 } else if (data.status_type === 'video') {
@@ -168,15 +168,12 @@
                 indicator.style.display = 'block';
                 
                 clearTimeout(typingTimeout);
-                // Увеличиваем время отображения для медиа до 4 секунд
                 typingTimeout = setTimeout(() => {
                     indicator.style.display = 'none';
                 }, 4000); 
             }
         });
 
-        let lastTypingTime = 0;
-        
         async function notifyTyping(statusType = 'typing') {
             if (!activeContact) return;
             
@@ -198,12 +195,14 @@
                     target_ip: targetUrl, 
                     target_username: activeContact.username, 
                     my_id: myUsername,
-                    status_type: statusType // ПЕРЕДАЕМ СТАТУС НА СЕРВЕР
+                    status_type: statusType
                 })
             });
         }
-        // ==========================================
 
+        // ==========================================
+        // ИНИЦИАЛИЗАЦИЯ И КЭШИРОВАНИЕ
+        // ==========================================
         const dbPromise = new Promise((resolve, reject) => {
             const req = indexedDB.open("SecureChatDB", 1);
             req.onupgradeneeded = e => e.target.result.createObjectStore("mediaCache");
@@ -266,7 +265,10 @@
             }
         }
 
-        function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
+        function encrypt(text, key) { 
+            return CryptoJS.AES.encrypt(text, key).toString(); 
+        }
+        
         function decrypt(cipherText, key) {
             try { 
                 const bytes = CryptoJS.AES.decrypt(cipherText, key); 
@@ -567,16 +569,18 @@
                     
                     videoChunks = [];
                     videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
+                    
+                    // ДОБАВЛЕН ИНТЕРВАЛ СИГНАЛА СТАТУСА!
+                    videoInterval = setInterval(() => notifyTyping('video'), 2000);
+                    
                     videoRecorder.onstop = () => { 
+                        clearInterval(videoInterval); // ОСТАНАВЛИВАЕМ СИГНАЛ СТАТУСА!
                         previewContainer.style.display = 'none';
                         videoStream.getTracks().forEach(t => t.stop()); 
                         const videoBlob = new Blob(videoChunks, {type: mimeType});
                         uploadMedia(new File([videoBlob], "circle.webm", { type: "video/webm" })); 
                     };
                     videoRecorder.start();
-                    let videoInterval = setInterval(() => notifyTyping('video'), 2000);
-                    videoRecorder.onstop = () => { 
-                        clearInterval(videoInterval);
                     btn.classList.add('recording-active');
                     setStatus("Recording HD Video...");
                 } catch(e) { alert("Ошибка камеры: " + e.message); }
@@ -605,15 +609,17 @@
                     mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 320000 });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                    
+                    // ДОБАВЛЕН ИНТЕРВАЛ СИГНАЛА СТАТУСА!
+                    audioInterval = setInterval(() => notifyTyping('audio'), 2000);
+                    
                     mediaRecorder.onstop = () => { 
+                        clearInterval(audioInterval); // ОСТАНАВЛИВАЕМ СИГНАЛ СТАТУСА!
                         uploadMedia(new Blob(audioChunks, {type: mimeType})); 
                         stream.getTracks().forEach(t => t.stop()); 
                         if (audioCtx.state !== 'closed') audioCtx.close();
                     };
                     mediaRecorder.start();
-                    let audioInterval = setInterval(() => notifyTyping('audio'), 2000);
-                    mediaRecorder.onstop = () => { 
-                        clearInterval(audioInterval);
                     btn.classList.add('recording-active');
                     setStatus("Hi-Fi Recording...");
                 } catch(e) { alert("Mic error: " + e.message); }
