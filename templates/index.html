@@ -155,23 +155,32 @@
         socket.on('user_typing', function(data) {
             if (activeContact && activeContact.username === data.sender) {
                 const indicator = document.getElementById('typing-indicator');
-                indicator.innerText = `${data.sender} печатает... ✍️`;
+                
+                // РАСПОЗНАЕМ СТАТУС!
+                if (data.status_type === 'audio') {
+                    indicator.innerText = `${data.sender} записывает аудио... 🎤`;
+                } else if (data.status_type === 'video') {
+                    indicator.innerText = `${data.sender} записывает видео... 📷`;
+                } else {
+                    indicator.innerText = `${data.sender} печатает... ✍️`;
+                }
+                
                 indicator.style.display = 'block';
                 
                 clearTimeout(typingTimeout);
+                // Увеличиваем время отображения для медиа до 4 секунд
                 typingTimeout = setTimeout(() => {
                     indicator.style.display = 'none';
-                }, 3000);
+                }, 4000); 
             }
         });
 
         let lastTypingTime = 0;
         
-        async function notifyTyping() {
+        async function notifyTyping(statusType = 'typing') {
             if (!activeContact) return;
             
             const now = Date.now();
-            // Защита от спама: отправляем сигнал "Печатает" не чаще, чем 1 раз в 2 секунды
             if (now - lastTypingTime < 2000) return; 
             lastTypingTime = now;
             
@@ -182,14 +191,14 @@
             }
             if (!targetUrl) return;
 
-            // Просим наш сервер передать сигнал на чужой сервер
             fetch('/api/typing', {
                 method: 'POST', 
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ 
                     target_ip: targetUrl, 
                     target_username: activeContact.username, 
-                    my_id: myUsername 
+                    my_id: myUsername,
+                    status_type: statusType // ПЕРЕДАЕМ СТАТУС НА СЕРВЕР
                 })
             });
         }
@@ -565,6 +574,9 @@
                         uploadMedia(new File([videoBlob], "circle.webm", { type: "video/webm" })); 
                     };
                     videoRecorder.start();
+                    let videoInterval = setInterval(() => notifyTyping('video'), 2000);
+                    videoRecorder.onstop = () => { 
+                        clearInterval(videoInterval);
                     btn.classList.add('recording-active');
                     setStatus("Recording HD Video...");
                 } catch(e) { alert("Ошибка камеры: " + e.message); }
@@ -599,6 +611,9 @@
                         if (audioCtx.state !== 'closed') audioCtx.close();
                     };
                     mediaRecorder.start();
+                    let audioInterval = setInterval(() => notifyTyping('audio'), 2000);
+                    mediaRecorder.onstop = () => { 
+                        clearInterval(audioInterval);
                     btn.classList.add('recording-active');
                     setStatus("Hi-Fi Recording...");
                 } catch(e) { alert("Mic error: " + e.message); }

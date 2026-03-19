@@ -299,29 +299,31 @@ def save_synced():
 
 @app.route('/api/typing', methods=['POST'])
 def api_typing():
-    # Наш телефон говорит нашему серверу, что мы печатаем
     data = request.json
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
     target_username = data.get('target_username')
     sender_username = data.get('my_id')
     
+    # НОВОЕ: Передаем статус (Текст, Аудио или Видео)
+    status_type = data.get('status_type', 'typing') 
+    
     try:
-        # Наш сервер стучится на ЧУЖОЙ сервер и передает статус "Печатает"
         url = f"https://{target}/receive_typing"
-        requests.post(url, json={"sender_username": sender_username, "target": target_username}, timeout=2)
+        requests.post(url, json={"sender_username": sender_username, "target": target_username, "status_type": status_type}, timeout=2)
     except:
-        pass # Если чужой сервер недоступен, игнорируем
+        pass
     return "OK"
 
 @app.route('/receive_typing', methods=['POST'])
 def receive_typing():
-    # Чужой сервер сообщил нашему, что его юзер печатает
     data = request.json
     sender = data.get('sender_username')
     target = data.get('target')
     
-    # Пинаем по локальному кабелю НАШЕГО юзера, чтобы показать карандаш
-    socketio.emit('user_typing', {'sender': sender}, room=target)
+    # НОВОЕ: Читаем статус
+    status_type = data.get('status_type', 'typing')
+    
+    socketio.emit('user_typing', {'sender': sender, 'status_type': status_type}, room=target)
     return "OK"
 
 if __name__ == '__main__':
