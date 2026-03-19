@@ -5,18 +5,18 @@ from pywebpush import webpush, WebPushException
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
-# --- НОВАЯ БИБЛИОТЕКА WEBSOCKETS ---
+# ⚡ БИБЛИОТЕКА WEBSOCKETS
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
 CORS(app)
 app.secret_key = 'HIFI_STABLE_V10'
 
-# Включаем WebSockets для нашего сервера
+# Включаем WebSockets
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ==========================================
-# НАСТРОЙКИ ПАПОК И ВЕЧНОГО ХРАНИЛИЩА DOCKER
+# НАСТРОЙКИ ПАПОК
 # ==========================================
 UPLOAD_FOLDER = 'uploads'
 DB_DIR = 'db_data'
@@ -25,7 +25,7 @@ os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, 'messages.db')
 USER_PASSWORD = "123"
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 # Лимит 100 МБ для видео
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 # Лимит 100 МБ
 
 VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
 VAPID_PUBLIC_TXT = os.path.join(DB_DIR, "vapid_public.txt")
@@ -83,13 +83,12 @@ def on_join(data):
         join_room(username)
         print(f"🔌 УЗЕЛ ПОДКЛЮЧЕН К ТРУБЕ: {username}")
 
-# --- ДОБАВЛЯЕМ ВОТ ЭТОТ БЛОК ДЛЯ СТАТУСА ПЕЧАТАЕТ ---
 @socketio.on('typing')
 def on_typing(data):
     target = data.get('target')
     sender = data.get('sender')
     if target and sender:
-        # Пересылаем сигнал "Я печатаю" нужному собеседнику
+        # Пересылаем сигнал "Печатает" адресату по трубе
         emit('user_typing', {'sender': sender}, room=target)
 
 # ==========================================
@@ -200,10 +199,7 @@ def receive():
     conn.close()
     
     if target: 
-        # ⚡ МОМЕНТАЛЬНЫЙ ВЫСТРЕЛ ПО WEBSOCKET В ТРУБУ АДРЕСАТУ!
         socketio.emit('new_message', {'status': 'new'}, room=target)
-        
-        # Оставляем Push-уведомление для тех, кто свернул браузер
         send_push_notification(target, real_friend_name)
         
     return jsonify({"status": "delivered"}), 200
@@ -303,4 +299,5 @@ def save_synced():
 
 if __name__ == '__main__':
     init_db()
+    # ⚡ РАЗРЕШАЕМ ЗАПУСК WERKZEUG ДЛЯ DOCKER И WEBSOCKETS
     socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
