@@ -175,6 +175,9 @@
         let activeContact = null;
         let contactMap = {};
         
+        // ВОТ ЭТА НОВАЯ СТРОЧКА:
+        let localMediaCache = {};
+        
         let mediaRecorder;
         let audioChunks = [];
         let audioCtx;
@@ -311,9 +314,18 @@
 
         async function displayMedia(url, elementId) {
             try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error("File not found");
-                const base64Data = await response.text(); 
+                let base64Data;
+                
+                // --- МАГИЯ КЭША: Если мы сами это отправили - берем из памяти моментально! ---
+                if (localMediaCache[url]) {
+                    base64Data = localMediaCache[url];
+                } else {
+                    // Иначе (если это прислал друг) - скачиваем с сервера
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error("File not found");
+                    base64Data = await response.text(); 
+                }
+                
                 const el = document.getElementById(elementId);
                 
                 if (el) {
@@ -326,24 +338,18 @@
                     el.src = base64Data; 
                 }
                 
-                // Включаем кнопку скачивания и даем файлу правильное имя
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) {
                     dlBtn.href = base64Data;
                     dlBtn.style.display = 'inline-block';
-                    
-                    if (base64Data.startsWith('data:video')) {
-                        dlBtn.download = 'secure_video.webm';
-                    } else if (base64Data.startsWith('data:audio')) {
-                        dlBtn.download = 'secure_voice.mp4';
-                    } else {
-                        dlBtn.download = 'secure_photo.jpg';
-                    }
+                    if (base64Data.startsWith('data:video')) dlBtn.download = 'secure_video.webm';
+                    else if (base64Data.startsWith('data:audio')) dlBtn.download = 'secure_voice.mp4';
+                    else dlBtn.download = 'secure_photo.jpg';
                 }
 
             } catch (error) {
                 const el = document.getElementById(elementId);
-                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа удалено сервером]</small>";
+                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа удалено]</small>";
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) dlBtn.remove();
             }
@@ -464,12 +470,14 @@
                 });
                 
                 const { url } = await resp.json(); 
+                const absoluteUrl = `${window.location.origin}/uploads/${url}`;
+                
+                // --- МАГИЯ КЭША: ЗАПОМИНАЕМ СВОЙ ФАЙЛ, ЧТОБЫ НЕ СКАЧИВАТЬ ЕГО ЗАНОВО ---
+                localMediaCache[absoluteUrl] = rawData;
                 
                 let prefix = "IMG:";
                 if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
                 else if (file.type && file.type.startsWith('video')) prefix = "VIDEO:";
-                
-                const absoluteUrl = `${window.location.origin}/uploads/${url}`;
                 
                 await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
                 setStatus("Sent!");
@@ -512,8 +520,9 @@
 
             if (!videoRecorder || videoRecorder.state === 'inactive') {
                 try {
+                    // ЖЕСТКОЕ СЖАТИЕ ДЛЯ ТЕЛЕФОНА (чтобы быстро отправлялось)
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: "user" }, 
+                        video: { facingMode: "user", width: { max: 320 }, height: { max: 320 } }, 
                         audio: { echoCancellation: true, noiseSuppression: true } 
                     });
                     
@@ -521,7 +530,8 @@
                     previewContainer.style.display = 'block';
 
                     let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
-                    videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 1000000 });
+                    // СНИЗИЛИ БИТРЕЙТ ДО 400kbps (как в Телеграме)
+                    videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 400000 });
                     
                     videoChunks = [];
                     videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
@@ -542,7 +552,7 @@
             } else {
                 videoRecorder.stop();
                 btn.classList.remove('recording-active');
-                setStatus("Encoding Video...");
+                setStatus("Encoding...");
             }
         }
 
