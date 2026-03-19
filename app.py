@@ -294,5 +294,4 @@ def save_synced():
 
 if __name__ == '__main__':
     init_db()
-    # ТЕПЕРЬ СЕРВЕР ЗАПУСКАЕТСЯ ЧЕРЕЗ SOCKET.IO!
-    socketio.run(app, host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
