@@ -542,15 +542,14 @@
 
             if (!videoRecorder || videoRecorder.state === 'inactive') {
                 try {
-                    // УСТАНАВЛИВАЕМ HD-КАЧЕСТВО (1080p)
-                    // Используем 'ideal', чтобы телефон сам подобрал максимальное квадратное разрешение
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { 
-                            facingMode: "user", 
-                            width: { ideal: 1080 }, 
-                            height: { ideal: 1080 } 
-                        }, 
-                        audio: { echoCancellation: true, noiseSuppression: true } 
+                        video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1080 } }, 
+                        audio: { 
+                            echoCancellation: true, // Оставляем, чтобы видео не фонило
+                            noiseSuppression: false, // ОТКЛЮЧАЕМ для естественного тембра голоса
+                            autoGainControl: false, // ОТКЛЮЧАЕМ скачки громкости
+                            sampleRate: 48000 
+                        } 
                     });
                     
                     previewVideo.srcObject = videoStream;
@@ -558,8 +557,12 @@
 
                     let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
                     
-                    // ПОДНИМАЕМ БИТРЕЙТ ДО 3.5 Мегабит в секунду (Высокое качество, без пикселей)
-                    videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 3500000 });
+                    // ДОБАВЛЯЕМ audioBitsPerSecond ДЛЯ ВИДЕО (256 kbps для аудиодорожки)
+                    videoRecorder = new MediaRecorder(videoStream, { 
+                        mimeType: mimeType, 
+                        videoBitsPerSecond: 3500000,
+                        audioBitsPerSecond: 256000 
+                    });
                     
                     videoChunks = [];
                     videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
@@ -581,6 +584,60 @@
                 videoRecorder.stop();
                 btn.classList.remove('recording-active');
                 setStatus("Encoding HD...");
+            }
+        }
+
+        async function toggleVoice() {
+            const btn = document.getElementById('voice-btn');
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+                try {
+                    // СТУДИЙНЫЕ НАСТРОЙКИ МИКРОФОНА ДЛЯ ГС
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: { 
+                            echoCancellation: false, 
+                            noiseSuppression: false, 
+                            autoGainControl: false, 
+                            sampleRate: 48000, 
+                            channelCount: 2 // Поддержка Стерео (если есть 2 микрофона)
+                        } 
+                    });
+                    
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+                    const source = audioCtx.createMediaStreamSource(stream);
+                    const gainNode = audioCtx.createGain();
+                    
+                    // БЫЛО 3.0 (хрипело от перегруза). СТАЛО 1.2 (сочный, громкий звук без искажений)
+                    gainNode.gain.value = 1.2; 
+                    
+                    const destination = audioCtx.createMediaStreamDestination();
+                    source.connect(gainNode);
+                    gainNode.connect(destination);
+                    const boostedStream = destination.stream;
+
+                    // Указываем кодек opus для идеального качества
+                    let mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4';
+                    
+                    // МАКСИМАЛЬНЫЙ БИТРЕЙТ ДЛЯ ГС: 320 kbps
+                    mediaRecorder = new MediaRecorder(boostedStream, { 
+                        mimeType: mimeType, 
+                        audioBitsPerSecond: 320000 
+                    });
+                    
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                    mediaRecorder.onstop = () => { 
+                        uploadMedia(new Blob(audioChunks, {type: mimeType})); 
+                        stream.getTracks().forEach(t => t.stop()); 
+                        if (audioCtx.state !== 'closed') audioCtx.close();
+                    };
+                    mediaRecorder.start();
+                    btn.classList.add('recording-active');
+                    setStatus("Hi-Fi Recording...");
+                } catch(e) { alert("Mic error: " + e.message); }
+            } else {
+                mediaRecorder.stop();
+                btn.classList.remove('recording-active');
+                setStatus("Encoding...");
             }
         }
 
