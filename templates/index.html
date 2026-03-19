@@ -175,9 +175,6 @@
         let activeContact = null;
         let contactMap = {};
         
-        // ВОТ ЭТА НОВАЯ СТРОЧКА:
-        let localMediaCache = {};
-        
         let mediaRecorder;
         let audioChunks = [];
         let audioCtx;
@@ -192,6 +189,31 @@
         let isUpdatingMessages = false; 
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
+
+        // ==========================================
+        // МАГИЯ ПОСТОЯННОГО КЭША (IndexedDB)
+        // ==========================================
+        const dbPromise = new Promise((resolve, reject) => {
+            const req = indexedDB.open("SecureChatDB", 1);
+            req.onupgradeneeded = e => e.target.result.createObjectStore("mediaCache");
+            req.onsuccess = e => resolve(e.target.result);
+            req.onerror = e => reject(e);
+        });
+
+        async function saveToCache(url, data) {
+            const db = await dbPromise;
+            db.transaction("mediaCache", "readwrite").objectStore("mediaCache").put(data, url);
+        }
+
+        async function getFromCache(url) {
+            const db = await dbPromise;
+            return new Promise(resolve => {
+                const req = db.transaction("mediaCache", "readonly").objectStore("mediaCache").get(url);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => resolve(null);
+            });
+        }
+        // ==========================================
 
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -238,7 +260,6 @@
             return CryptoJS.AES.encrypt(text, key).toString(); 
         }
         
-        // СТАРЫЙ, НАДЕЖНЫЙ МЕХАНИЗМ РАСШИФРОВКИ!
         function decrypt(cipherText, key) {
             try { 
                 const bytes = CryptoJS.AES.decrypt(cipherText, key); 
@@ -312,22 +333,22 @@
             stopScanner();
         }
 
+        // ==========================================
+        // ИСПРАВЛЕННОЕ ОТОБРАЖЕНИЕ С ЖЕСТКИМ КЭШЕМ
+        // ==========================================
         async function displayMedia(url, elementId) {
             try {
-                let base64Data;
-                
-                // --- МАГИЯ КЭША: Если мы сами это отправили - берем из памяти моментально! ---
-                if (localMediaCache[url]) {
-                    base64Data = localMediaCache[url];
-                } else {
-                    // Иначе (если это прислал друг) - скачиваем с сервера
+                let base64Data = await getFromCache(url); // Ищем в памяти телефона
+
+                if (!base64Data) {
+                    // Если в памяти нет - качаем с сервера и СРАЗУ сохраняем в память навсегда
                     const response = await fetch(url);
                     if (!response.ok) throw new Error("File not found");
                     base64Data = await response.text(); 
+                    await saveToCache(url, base64Data);
                 }
-                
+
                 const el = document.getElementById(elementId);
-                
                 if (el) {
                     el.onload = el.onloadedmetadata = () => {
                         const chat = document.getElementById('chat');
@@ -338,6 +359,7 @@
                     el.src = base64Data; 
                 }
                 
+                // Кнопка скачивания
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) {
                     dlBtn.href = base64Data;
@@ -472,8 +494,8 @@
                 const { url } = await resp.json(); 
                 const absoluteUrl = `${window.location.origin}/uploads/${url}`;
                 
-                // --- МАГИЯ КЭША: ЗАПОМИНАЕМ СВОЙ ФАЙЛ, ЧТОБЫ НЕ СКАЧИВАТЬ ЕГО ЗАНОВО ---
-                localMediaCache[absoluteUrl] = rawData;
+                // СОХРАНЯЕМ В ПОСТОЯННУЮ ПАМЯТЬ ТЕЛЕФОНА ПЕРЕД ОТПРАВКОЙ!
+                await saveToCache(absoluteUrl, rawData);
                 
                 let prefix = "IMG:";
                 if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
@@ -485,7 +507,6 @@
             reader.readAsDataURL(file);
         }
 
-        // ВЕРНУЛИ НАДЕЖНЫЙ МЕТОД ОТПРАВКИ ИЗ ПРЕДЫДУЩЕЙ ВЕРСИИ
         async function postMsg(content) {
             setStatus("Locating...");
             let targetUrl = await getFriendUrl(activeContact.username);
@@ -496,17 +517,9 @@
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
-            
-            // ПЕРЕВЕЛИ ОТПРАВКУ НА ЧИСТЫЙ JSON (Теперь видео и смайлики не сломаются!)
             const resp = await fetch('/send_message', {
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    target_ip: targetUrl,
-                    target_username: activeContact.username,
-                    content: content,
-                    my_id: myUsername
-                })
+                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: `target_ip=${targetUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${encodeURIComponent(myUsername)}`
             });
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
@@ -520,7 +533,6 @@
 
             if (!videoRecorder || videoRecorder.state === 'inactive') {
                 try {
-                    // ЖЕСТКОЕ СЖАТИЕ ДЛЯ ТЕЛЕФОНА (чтобы быстро отправлялось)
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: "user", width: { max: 320 }, height: { max: 320 } }, 
                         audio: { echoCancellation: true, noiseSuppression: true } 
@@ -530,7 +542,6 @@
                     previewContainer.style.display = 'block';
 
                     let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
-                    // СНИЗИЛИ БИТРЕЙТ ДО 400kbps (как в Телеграме)
                     videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 400000 });
                     
                     videoChunks = [];
@@ -552,7 +563,7 @@
             } else {
                 videoRecorder.stop();
                 btn.classList.remove('recording-active');
-                setStatus("Encoding...");
+                setStatus("Encoding Video...");
             }
         }
 
