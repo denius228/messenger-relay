@@ -70,6 +70,8 @@
         <div id="contact-list"></div>
         <div id="chat"></div>
         
+        <div id="typing-indicator" style="display:none; padding: 5px 15px; font-size: 12px; color: #40a7e3; font-style: italic; background: #17212b;"></div>
+        
         <div id="video-preview-container">
             <video id="video-preview" autoplay muted playsinline></video>
         </div>
@@ -78,7 +80,10 @@
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
-                <input type="text" id="content" placeholder="Message..." onkeypress="if(event.key === 'Enter') sendText()" onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
+                <input type="text" id="content" placeholder="Message..." 
+    oninput="notifyTyping()" 
+    onkeypress="if(event.key === 'Enter') sendText()" 
+    onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
                 <button id="video-btn" onclick="toggleVideo()" style="margin-right: 5px;">📷</button>
                 <button id="voice-btn" onclick="toggleVoice()">🎤</button>
             </div>
@@ -132,19 +137,30 @@
         // ⚡ ВТЫКАЕМ ШТЕКЕР WEBSOCKET В РОЗЕТКУ!
         // ==========================================
         const socket = io(); 
+        let typingTimeout = null;
         
-        // Когда сервер пнул нас по трубе, мы мгновенно обновляем чат!
+        // 1. Сервер говорит нам: "Новое сообщение!"
         socket.on('new_message', function(data) {
             isUpdatingMessages = false; 
             loadMessages();
+            // Убираем надпись "печатает", если сообщение пришло
+            document.getElementById('typing-indicator').style.display = 'none'; 
         });
-        // ==========================================
 
-        const dbPromise = new Promise((resolve, reject) => {
-            const req = indexedDB.open("SecureChatDB", 1);
-            req.onupgradeneeded = e => e.target.result.createObjectStore("mediaCache");
-            req.onsuccess = e => resolve(e.target.result);
-            req.onerror = e => reject(e);
+        // 2. Сервер говорит нам: "Собеседник печатает!"
+        socket.on('user_typing', function(data) {
+            // Показываем надпись только если мы сейчас в чате с этим человеком
+            if (activeContact && activeContact.username === data.sender) {
+                const indicator = document.getElementById('typing-indicator');
+                indicator.innerText = `${data.sender} печатает... ✍️`;
+                indicator.style.display = 'block';
+                
+                // Прячем надпись через 3 секунды, если он перестал печатать
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    indicator.style.display = 'none';
+                }, 3000);
+            }
         });
 
         async function saveToCache(url, data) {
@@ -582,6 +598,14 @@
                     } catch(e) {}
                 }
             }
+        }
+
+        function notifyTyping() {
+            if (!activeContact) return;
+            socket.emit('typing', { 
+                target: activeContact.username, 
+                sender: myUsername 
+            });
         }
 
         document.addEventListener("visibilitychange", function() {

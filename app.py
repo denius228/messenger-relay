@@ -81,7 +81,16 @@ def on_join(data):
     username = data.get('username')
     if username:
         join_room(username)
-        print(f"🔌 УЗЕЛ ПОДКЛЮЧЕН К ТРУБЕ (В СЕТИ): {username}")
+        print(f"🔌 УЗЕЛ ПОДКЛЮЧЕН К ТРУБЕ: {username}")
+
+# --- ДОБАВЛЯЕМ ВОТ ЭТОТ БЛОК ДЛЯ СТАТУСА ПЕЧАТАЕТ ---
+@socketio.on('typing')
+def on_typing(data):
+    target = data.get('target')
+    sender = data.get('sender')
+    if target and sender:
+        # Пересылаем сигнал "Я печатаю" нужному собеседнику
+        emit('user_typing', {'sender': sender}, room=target)
 
 # ==========================================
 # РОУТЫ И ЛОГИКА
