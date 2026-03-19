@@ -517,10 +517,19 @@
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
+            
+            // ПРАВИЛЬНЫЙ ФОРМАТ JSON (Уберет ошибку 415)
             const resp = await fetch('/send_message', {
-                method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: `target_ip=${targetUrl}&target_username=${encodeURIComponent(activeContact.username)}&content=${encodeURIComponent(content)}&my_id=${encodeURIComponent(myUsername)}`
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    target_ip: targetUrl,
+                    target_username: activeContact.username,
+                    content: content,
+                    my_id: myUsername
+                })
             });
+            
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
             loadMessages();
