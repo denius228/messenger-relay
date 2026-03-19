@@ -165,11 +165,32 @@
             }
         });
 
-        function notifyTyping() {
+        let lastTypingTime = 0;
+        
+        async function notifyTyping() {
             if (!activeContact) return;
-            socket.emit('typing', { 
-                target: activeContact.username, 
-                sender: myUsername 
+            
+            const now = Date.now();
+            // Защита от спама: отправляем сигнал "Печатает" не чаще, чем 1 раз в 2 секунды
+            if (now - lastTypingTime < 2000) return; 
+            lastTypingTime = now;
+            
+            let targetUrl = await getFriendUrl(activeContact.username);
+            if (!targetUrl) {
+                const contactData = Object.entries(contactMap).find(([ip, name]) => name === activeContact.username);
+                if (contactData) targetUrl = contactData[0]; 
+            }
+            if (!targetUrl) return;
+
+            // Просим наш сервер передать сигнал на чужой сервер
+            fetch('/api/typing', {
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ 
+                    target_ip: targetUrl, 
+                    target_username: activeContact.username, 
+                    my_id: myUsername 
+                })
             });
         }
         // ==========================================
