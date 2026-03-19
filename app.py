@@ -5,9 +5,15 @@ from pywebpush import webpush, WebPushException
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
+# --- НОВАЯ БИБЛИОТЕКА WEBSOCKETS ---
+from flask_socketio import SocketIO, emit, join_room
+
 app = Flask(__name__)
 CORS(app)
 app.secret_key = 'HIFI_STABLE_V10'
+
+# Включаем WebSockets для нашего сервера
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ==========================================
 # НАСТРОЙКИ ПАПОК И ВЕЧНОГО ХРАНИЛИЩА DOCKER
@@ -19,7 +25,7 @@ os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, 'messages.db')
 USER_PASSWORD = "123"
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 # Лимит 100 МБ для видео
 
 VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
 VAPID_PUBLIC_TXT = os.path.join(DB_DIR, "vapid_public.txt")
@@ -67,6 +73,19 @@ def init_db():
     conn.commit()
     conn.close()
 
+# ==========================================
+# WEBSOCKETS ЛОГИКА (РЕАЛТАЙМ)
+# ==========================================
+@socketio.on('join')
+def on_join(data):
+    username = data.get('username')
+    if username:
+        join_room(username)
+        print(f"🔌 УЗЕЛ ПОДКЛЮЧЕН К ТРУБЕ (В СЕТИ): {username}")
+
+# ==========================================
+# РОУТЫ И ЛОГИКА
+# ==========================================
 @app.route('/sw.js')
 def serve_sw(): return app.send_static_file('sw.js')
 
@@ -110,8 +129,7 @@ def get_tracker():
     row = c.fetchone()
     conn.close()
     if row: return jsonify({"url": row[0]})
-    # ФИКС КРАСНЫХ ОШИБОК В КОНСОЛИ
-    return jsonify({"url": None, "status": "offline"}), 200 
+    return jsonify({"url": None, "status": "offline"}), 200
 
 @app.route('/api/push/subscribe', methods=['POST'])
 def push_subscribe():
@@ -147,34 +165,37 @@ def send_push_notification(target_username, sender_username):
         except Exception as e:
             print("Push error:", e)
     else:
-        # ДОБАВЬТЕ ЭТУ СТРОКУ, ЧТОБЫ ВИДЕТЬ ОШИБКУ В ТЕРМИНАЛЕ!
         print(f"⚠️ ПУШ ОТМЕНЕН: Юзер {target_username} не подписался (не нажал 🔔) или нет в БД!")
 
 @app.route('/receive', methods=['POST'])
 def receive():
     data = request.json
-    
-    # Теперь мы получаем ИМЯ отправителя (например, 'Phone'), а не его IP-адрес!
-    sender_username = data.get('sender_username') 
-    
+    raw_sender = data.get('sender_username') or data.get('sender', '').split(':')[0]
     target = data.get('target')
     content = data.get('content')
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Анти-спам: Ищем в контактах ИМЕННО ИМЯ отправителя
-    c.execute("SELECT ip FROM contacts WHERE name = ?", (sender_username,))
-    if not c.fetchone():
+    c.execute("SELECT name FROM contacts WHERE name = ? OR ip = ?", (raw_sender, raw_sender))
+    row = c.fetchone()
+    
+    if not row:
         conn.close()
-        return jsonify({"error": f"Anti-Spam: Unknown sender username '{sender_username}'"}), 403
+        return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
 
-    # Если нашли в контактах - пропускаем и сохраняем!
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (sender_username, sender_username, content, datetime.datetime.now().strftime("%H:%M")))
+    real_friend_name = row[0]
+
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     conn.close()
     
-    if target: send_push_notification(target, sender_username)
+    if target: 
+        # ⚡ МОМЕНТАЛЬНЫЙ ВЫСТРЕЛ ПО WEBSOCKET В ТРУБУ АДРЕСАТУ!
+        socketio.emit('new_message', {'status': 'new'}, room=target)
+        
+        # Оставляем Push-уведомление для тех, кто свернул браузер
+        send_push_notification(target, real_friend_name)
         
     return jsonify({"status": "delivered"}), 200
 
@@ -186,7 +207,7 @@ def send():
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
     target_username = data.get('target_username')
     content = data.get('content')
-    my_username = data.get('my_id') # Это ВАШЕ имя профиля (отправителя)
+    my_username = data.get('my_id') 
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -196,8 +217,12 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        # ОТПРАВЛЯЕМ ИМЯ ОТПРАВИТЕЛЯ (sender_username), А НЕ IP!
-        resp = requests.post(url, json={"sender_username": my_username, "target": target_username, "content": content}, timeout=10)
+        resp = requests.post(url, json={
+            "sender": my_username, 
+            "sender_username": my_username, 
+            "target": target_username, 
+            "content": content
+        }, timeout=10)
         if resp.status_code == 200: return "OK"
         raise Exception()
     except:
@@ -269,4 +294,5 @@ def save_synced():
 
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000)
+    # ТЕПЕРЬ СЕРВЕР ЗАПУСКАЕТСЯ ЧЕРЕЗ SOCKET.IO!
+    socketio.run(app, host='0.0.0.0', port=5000)

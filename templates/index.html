@@ -13,99 +13,37 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     
+    <!-- ⚡ БИБЛИОТЕКА WEBSOCKETS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: #0e1621; 
-            color: white; 
-            margin: 0; 
-            padding: 0;
-            width: 100vw; 
-            height: 100dvh; 
-            display: flex; 
-            flex-direction: column; 
-            overflow: hidden; 
-            overscroll-behavior: none; 
-            -webkit-user-select: none; 
-            user-select: none;
-            -webkit-tap-highlight-color: transparent; 
-        }
-
-        .header { 
-            background: #17212b; 
-            padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; 
-            text-align: center; 
-            font-weight: bold; 
-            border-bottom: 1px solid #111; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            flex-shrink: 0;
-        }
-
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0e1621; color: white; margin: 0; padding: 0; width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+        .header { background: #17212b; padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #111; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         .btn-small { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
         #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; flex-shrink: 0; }
-        
         #contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; align-items: center; }
         .contact-card { background: #242f3d; padding: 8px 15px; border-radius: 20px; font-size: 14px; white-space: nowrap; border: 1px solid transparent; display: flex; align-items: center; gap: 10px; }
         .contact-card.active { border-color: #40a7e3; background: #2b5278; }
         .contact-name { cursor: pointer; flex: 1; }
         .delete-btn { color: #ff4d4d; cursor: pointer; font-weight: bold; font-size: 12px; padding: 2px 5px; border-radius: 50%; }
-        
         #chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; background-image: url('https://www.transparenttextures.com/patterns/carbon-fibre.png'); scroll-behavior: smooth; }
-        
         .msg, input { -webkit-user-select: text; user-select: text; }
-        
         .msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
         .msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
         .msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
-        
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 150px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
-        
-        /* Стили видео-кружочков в чате */
-        .msg video.circle-video { 
-            width: 220px; 
-            height: 220px; 
-            border-radius: 50%; 
-            object-fit: cover; 
-            background: #182533; 
-            margin-top: 5px; 
-            border: 3px solid #40a7e3; 
-        }
-
+        .msg video.circle-video { width: 220px; height: 220px; border-radius: 50%; object-fit: cover; background: #182533; margin-top: 5px; border: 3px solid #40a7e3; }
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; width: 100%; }
         button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; flex-shrink: 0; }
         .recording-active { animation: pulse-red 1s infinite; }
         @keyframes pulse-red { 0% {color: #40a7e3} 50% {color: red} 100% {color: #40a7e3} }
-        
-        /* Предпросмотр камеры над полем ввода */
-        #video-preview-container {
-            display: none;
-            position: absolute;
-            bottom: 70px;
-            right: 15px;
-            width: 150px;
-            height: 150px;
-            border-radius: 50%;
-            overflow: hidden;
-            border: 3px solid #ff4d4d;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            z-index: 100;
-            background: black;
-        }
-        #video-preview {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1); /* Зеркалим фронталку */
-        }
-
+        #video-preview-container { display: none; position: absolute; bottom: 70px; right: 15px; width: 150px; height: 150px; border-radius: 50%; overflow: hidden; border: 3px solid #ff4d4d; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100; background: black; }
+        #video-preview { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; text-align: center; }
         .modal input { width: 100%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
         #qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
@@ -124,7 +62,7 @@
     {% else %}
         <div class="header">
             <button class="btn-small" onclick="showProfile()">PROFILE</button>
-            <span>E2EE CHAT</span> 
+            <span>E2EE CHAT ⚡</span> 
             <button class="btn-small" onclick="enablePush()" id="push-btn">🔔</button>
             <button class="btn-small" onclick="document.getElementById('add-modal').style.display='block'">+ ADD</button>
         </div>
@@ -132,7 +70,6 @@
         <div id="contact-list"></div>
         <div id="chat"></div>
         
-        <!-- Контейнер для превью видео-кружочка -->
         <div id="video-preview-container">
             <video id="video-preview" autoplay muted playsinline></video>
         </div>
@@ -174,6 +111,7 @@
         let lastMessageCount = 0;
         let activeContact = null;
         let contactMap = {};
+        let localMediaCache = {}; 
         
         let mediaRecorder;
         let audioChunks = [];
@@ -191,8 +129,17 @@
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
         // ==========================================
-        // МАГИЯ ПОСТОЯННОГО КЭША (IndexedDB)
+        // ⚡ ВТЫКАЕМ ШТЕКЕР WEBSOCKET В РОЗЕТКУ!
         // ==========================================
+        const socket = io(); 
+        
+        // Когда сервер пнул нас по трубе, мы мгновенно обновляем чат!
+        socket.on('new_message', function(data) {
+            isUpdatingMessages = false; 
+            loadMessages();
+        });
+        // ==========================================
+
         const dbPromise = new Promise((resolve, reject) => {
             const req = indexedDB.open("SecureChatDB", 1);
             req.onupgradeneeded = e => e.target.result.createObjectStore("mediaCache");
@@ -213,7 +160,6 @@
                 req.onerror = () => resolve(null);
             });
         }
-        // ==========================================
 
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -299,6 +245,9 @@
             localStorage.setItem('my_key', myKey);
             generateQR();
             pingTracker();
+            
+            // ⚡ СООБЩАЕМ СЕРВЕРУ СВОЕ НОВОЕ ИМЯ (Включаем трубу!)
+            socket.emit('join', { username: myUsername });
             alert("Profile Saved!");
         }
 
@@ -333,15 +282,11 @@
             stopScanner();
         }
 
-        // ==========================================
-        // ИСПРАВЛЕННОЕ ОТОБРАЖЕНИЕ С ЖЕСТКИМ КЭШЕМ
-        // ==========================================
         async function displayMedia(url, elementId) {
             try {
-                let base64Data = await getFromCache(url); // Ищем в памяти телефона
+                let base64Data = await getFromCache(url); 
 
                 if (!base64Data) {
-                    // Если в памяти нет - качаем с сервера и СРАЗУ сохраняем в память навсегда
                     const response = await fetch(url);
                     if (!response.ok) throw new Error("File not found");
                     base64Data = await response.text(); 
@@ -359,7 +304,6 @@
                     el.src = base64Data; 
                 }
                 
-                // Кнопка скачивания
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) {
                     dlBtn.href = base64Data;
@@ -481,12 +425,10 @@
 
         async function uploadMedia(file) {
             if (!file || !activeContact) return;
-
-            // --- НОВАЯ ЗАЩИТА ОТ ЗАВИСАНИЙ И ОШИБКИ 413 ---
-            // Т.к. Base64 увеличивает вес файла на 33%, ставим лимит исходного файла в 60 МБ
+            
             const maxSizeMB = 60; 
             if (file.size > maxSizeMB * 1024 * 1024) {
-                alert(`🛑 Файл слишком большой!\n\nМаксимальный размер: ${maxSizeMB} МБ.\nРазмер вашего файла: ${(file.size / 1024 / 1024).toFixed(1)} МБ.\n\nПожалуйста, обрежьте видео или выберите файл поменьше.`);
+                alert(`🛑 Файл слишком большой!\n\nМаксимальный размер: ${maxSizeMB} МБ.`);
                 return;
             }
 
@@ -497,12 +439,10 @@
                     setStatus("Uploading...");
                     const rawData = e.target.result;
                     const resp = await fetch('/api/upload', { 
-                        method: 'POST', 
-                        headers: {'Content-Type': 'application/json'}, 
-                        body: JSON.stringify({ data: rawData }) 
+                        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: rawData }) 
                     });
                     
-                    if (!resp.ok) throw new Error("Upload failed (возможно файл слишком велик для Cloudflare)");
+                    if (!resp.ok) throw new Error("Upload failed");
 
                     const { url } = await resp.json(); 
                     const absoluteUrl = `${window.location.origin}/uploads/${url}`;
@@ -533,11 +473,8 @@
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
 
             setStatus("Sending...");
-            
-            // ПРАВИЛЬНЫЙ ФОРМАТ JSON (Уберет ошибку 415)
             const resp = await fetch('/send_message', {
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'},
+                method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     target_ip: targetUrl,
                     target_username: activeContact.username,
@@ -545,9 +482,10 @@
                     my_id: myUsername
                 })
             });
-            
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
+            
+            // Загружаем отправленное сообщение себе в UI (без ожидания)
             loadMessages();
         }
 
@@ -560,38 +498,23 @@
                 try {
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1080 } }, 
-                        audio: { 
-                            echoCancellation: true, // Оставляем, чтобы видео не фонило
-                            noiseSuppression: false, // ОТКЛЮЧАЕМ для естественного тембра голоса
-                            autoGainControl: false, // ОТКЛЮЧАЕМ скачки громкости
-                            sampleRate: 48000 
-                        } 
+                        audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false, sampleRate: 48000 } 
                     });
                     
                     previewVideo.srcObject = videoStream;
                     previewContainer.style.display = 'block';
 
                     let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
-                    
-                    // ДОБАВЛЯЕМ audioBitsPerSecond ДЛЯ ВИДЕО (256 kbps для аудиодорожки)
-                    videoRecorder = new MediaRecorder(videoStream, { 
-                        mimeType: mimeType, 
-                        videoBitsPerSecond: 3500000,
-                        audioBitsPerSecond: 256000 
-                    });
+                    videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 3500000, audioBitsPerSecond: 256000 });
                     
                     videoChunks = [];
                     videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
-                    
                     videoRecorder.onstop = () => { 
                         previewContainer.style.display = 'none';
                         videoStream.getTracks().forEach(t => t.stop()); 
-                        
                         const videoBlob = new Blob(videoChunks, {type: mimeType});
-                        const file = new File([videoBlob], "circle.webm", { type: "video/webm" });
-                        uploadMedia(file); 
+                        uploadMedia(new File([videoBlob], "circle.webm", { type: "video/webm" })); 
                     };
-                    
                     videoRecorder.start();
                     btn.classList.add('recording-active');
                     setStatus("Recording HD Video...");
@@ -607,72 +530,18 @@
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
                 try {
-                    // СТУДИЙНЫЕ НАСТРОЙКИ МИКРОФОНА ДЛЯ ГС
-                    const stream = await navigator.mediaDevices.getUserMedia({ 
-                        audio: { 
-                            echoCancellation: false, 
-                            noiseSuppression: false, 
-                            autoGainControl: false, 
-                            sampleRate: 48000, 
-                            channelCount: 2 // Поддержка Стерео (если есть 2 микрофона)
-                        } 
-                    });
-                    
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 } });
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
                     const source = audioCtx.createMediaStreamSource(stream);
                     const gainNode = audioCtx.createGain();
-                    
-                    // БЫЛО 3.0 (хрипело от перегруза). СТАЛО 1.2 (сочный, громкий звук без искажений)
                     gainNode.gain.value = 1.2; 
-                    
                     const destination = audioCtx.createMediaStreamDestination();
                     source.connect(gainNode);
                     gainNode.connect(destination);
                     const boostedStream = destination.stream;
 
-                    // Указываем кодек opus для идеального качества
                     let mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4';
-                    
-                    // МАКСИМАЛЬНЫЙ БИТРЕЙТ ДЛЯ ГС: 320 kbps
-                    mediaRecorder = new MediaRecorder(boostedStream, { 
-                        mimeType: mimeType, 
-                        audioBitsPerSecond: 320000 
-                    });
-                    
-                    audioChunks = [];
-                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-                    mediaRecorder.onstop = () => { 
-                        uploadMedia(new Blob(audioChunks, {type: mimeType})); 
-                        stream.getTracks().forEach(t => t.stop()); 
-                        if (audioCtx.state !== 'closed') audioCtx.close();
-                    };
-                    mediaRecorder.start();
-                    btn.classList.add('recording-active');
-                    setStatus("Hi-Fi Recording...");
-                } catch(e) { alert("Mic error: " + e.message); }
-            } else {
-                mediaRecorder.stop();
-                btn.classList.remove('recording-active');
-                setStatus("Encoding...");
-            }
-        }
-
-        async function toggleVoice() {
-            const btn = document.getElementById('voice-btn');
-            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, sampleRate: 48000, channelCount: 1 } });
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                    const source = audioCtx.createMediaStreamSource(stream);
-                    const gainNode = audioCtx.createGain();
-                    gainNode.gain.value = 3.0; 
-                    const destination = audioCtx.createMediaStreamDestination();
-                    source.connect(gainNode);
-                    gainNode.connect(destination);
-                    const boostedStream = destination.stream;
-
-                    let mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-                    mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 256000 });
+                    mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 320000 });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                     mediaRecorder.onstop = () => { 
@@ -723,12 +592,18 @@
             }
         });
 
+        // ⚡ УДАЛИЛИ setInterval(loadMessages, 3000); ТЕПЕРЬ ВСЕ РАБОТАЕТ МГНОВЕННО ЧЕРЕЗ WEBSOCKETS!
         setInterval(pingTracker, 30000);
-        setInterval(loadMessages, 3000);
-        setInterval(pollRelays, 10000); 
+        setInterval(pollRelays, 15000); // Реле опрашиваем чуть реже, чтобы не грузить сервер
         
         if (document.getElementById('contact-list')) {
             loadContacts();
+            
+            // При загрузке страницы подключаемся к трубе, если есть логин
+            if (myUsername) {
+                socket.emit('join', { username: myUsername });
+            }
+            
             setTimeout(pingTracker, 2000);
             if (localStorage.getItem('push_enabled') === 'true') document.getElementById('push-btn').style.background = "#4CAF50";
         }
