@@ -19,7 +19,7 @@ os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, 'messages.db')
 USER_PASSWORD = "123"
-app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
 VAPID_PUBLIC_TXT = os.path.join(DB_DIR, "vapid_public.txt")

@@ -481,28 +481,44 @@
 
         async function uploadMedia(file) {
             if (!file || !activeContact) return;
-            setStatus("Uploading...");
+
+            // --- НОВАЯ ЗАЩИТА ОТ ЗАВИСАНИЙ И ОШИБКИ 413 ---
+            // Т.к. Base64 увеличивает вес файла на 33%, ставим лимит исходного файла в 60 МБ
+            const maxSizeMB = 60; 
+            if (file.size > maxSizeMB * 1024 * 1024) {
+                alert(`🛑 Файл слишком большой!\n\nМаксимальный размер: ${maxSizeMB} МБ.\nРазмер вашего файла: ${(file.size / 1024 / 1024).toFixed(1)} МБ.\n\nПожалуйста, обрежьте видео или выберите файл поменьше.`);
+                return;
+            }
+
+            setStatus("Encoding Media...");
             const reader = new FileReader();
             reader.onload = async (e) => {
-                const rawData = e.target.result;
-                const resp = await fetch('/api/upload', { 
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify({ data: rawData }) 
-                });
-                
-                const { url } = await resp.json(); 
-                const absoluteUrl = `${window.location.origin}/uploads/${url}`;
-                
-                // СОХРАНЯЕМ В ПОСТОЯННУЮ ПАМЯТЬ ТЕЛЕФОНА ПЕРЕД ОТПРАВКОЙ!
-                await saveToCache(absoluteUrl, rawData);
-                
-                let prefix = "IMG:";
-                if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
-                else if (file.type && file.type.startsWith('video')) prefix = "VIDEO:";
-                
-                await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
-                setStatus("Sent!");
+                try {
+                    setStatus("Uploading...");
+                    const rawData = e.target.result;
+                    const resp = await fetch('/api/upload', { 
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'}, 
+                        body: JSON.stringify({ data: rawData }) 
+                    });
+                    
+                    if (!resp.ok) throw new Error("Upload failed (возможно файл слишком велик для Cloudflare)");
+
+                    const { url } = await resp.json(); 
+                    const absoluteUrl = `${window.location.origin}/uploads/${url}`;
+                    
+                    await saveToCache(absoluteUrl, rawData);
+                    
+                    let prefix = "IMG:";
+                    if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
+                    else if (file.type && file.type.startsWith('video')) prefix = "VIDEO:";
+                    
+                    await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
+                    setStatus("Sent!");
+                } catch (err) {
+                    alert("Ошибка отправки: " + err.message);
+                    setStatus("System Ready");
+                }
             };
             reader.readAsDataURL(file);
         }
