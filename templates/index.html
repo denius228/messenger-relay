@@ -315,6 +315,7 @@
                 if (!response.ok) throw new Error("File not found");
                 const base64Data = await response.text(); 
                 const el = document.getElementById(elementId);
+                
                 if (el) {
                     el.onload = el.onloadedmetadata = () => {
                         const chat = document.getElementById('chat');
@@ -324,9 +325,27 @@
                     };
                     el.src = base64Data; 
                 }
+                
+                // Включаем кнопку скачивания и даем файлу правильное имя
+                const dlBtn = document.getElementById('dl_' + elementId);
+                if (dlBtn) {
+                    dlBtn.href = base64Data;
+                    dlBtn.style.display = 'inline-block';
+                    
+                    if (base64Data.startsWith('data:video')) {
+                        dlBtn.download = 'secure_video.webm';
+                    } else if (base64Data.startsWith('data:audio')) {
+                        dlBtn.download = 'secure_voice.mp4';
+                    } else {
+                        dlBtn.download = 'secure_photo.jpg';
+                    }
+                }
+
             } catch (error) {
                 const el = document.getElementById(elementId);
-                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа удалено]</small>";
+                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа удалено сервером]</small>";
+                const dlBtn = document.getElementById('dl_' + elementId);
+                if (dlBtn) dlBtn.remove();
             }
         }
 
@@ -396,14 +415,16 @@
                     const mediaId = "m" + Math.random().toString(36).substr(2, 7);
 
                     let isMedia = false;
+                    let dlBtn = `<br><a id="dl_${mediaId}" style="display:none; color: #40a7e3; text-decoration: none; font-size: 13px; font-weight: bold; margin-top: 5px; cursor: pointer;">💾 Сохранить</a>`;
+
                     if (text.startsWith("IMG:")) { 
-                        content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">`; 
+                        content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">` + dlBtn; 
                         isMedia = true; 
                     } else if (text.startsWith("VOICE:")) { 
-                        content = `<audio id="${mediaId}" controls></audio>`; 
+                        content = `<audio id="${mediaId}" controls></audio>` + dlBtn; 
                         isMedia = true; 
                     } else if (text.startsWith("VIDEO:")) { 
-                        content = `<video id="${mediaId}" class="circle-video" controls playsinline loop preload="metadata"></video>`; 
+                        content = `<video id="${mediaId}" class="circle-video" controls playsinline loop preload="metadata"></video>` + dlBtn; 
                         isMedia = true; 
                     }
                     
