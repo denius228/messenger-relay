@@ -133,7 +133,7 @@
         let mediaRecorder, audioCtx, audioInterval, videoRecorder, videoStream, videoInterval;
         let audioChunks = [], videoChunks = [];
 
-        const myHost = window.location.hostname; 
+        const myHost = window.location.host; 
         let html5QrcodeScanner = null;
         let myUsername = localStorage.getItem('my_username') || "";
         let isUpdatingMessages = false; 
@@ -327,7 +327,7 @@
             if (!myWallet) return;
             document.getElementById('qr-code').innerHTML = "";
             const compressedPub = ethers.utils.computePublicKey(myWallet.publicKey, true);
-            const data = JSON.stringify({ username: myUsername, pub: compressedPub, ip: window.location.hostname });
+            const data = JSON.stringify({ username: myUsername, pub: compressedPub, ip: window.location.host });
             new QRCode(document.getElementById("qr-code"), { text: data, width: 220, height: 220, colorDark: "#000", colorLight: "#fff" });
         }
 
