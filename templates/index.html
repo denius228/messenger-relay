@@ -361,14 +361,34 @@
             stopScanner();
         }
 
-        async function displayMedia(url, elementId) {
+        async function displayMedia(url, elementId) {111111111111111111111111111111111111111
             try {
                 let base64Data = await getFromCache(url); 
 
+                // 1. Если в кэш случайно попала страница ошибки от Ngrok (не начинается на data:), удаляем её
+                if (base64Data && !base64Data.trim().startsWith("data:")) {
+                    const db = await dbPromise;
+                    db.transaction("mediaCache", "readwrite").objectStore("mediaCache").delete(url);
+                    base64Data = null; // Заставляем скачать заново
+                }
+
                 if (!base64Data) {
-                    const response = await fetch(url);
+                    // 2. Добавляем заголовки-ключи для обхода блокировки экрана Ngrok/Localtunnel
+                    const response = await fetch(url, {
+                        headers: {
+                            "ngrok-skip-browser-warning": "true",
+                            "Bypass-Tunnel-Reminder": "true"
+                        }
+                    });
+                    
                     if (!response.ok) throw new Error("File not found");
                     base64Data = await response.text(); 
+                    
+                    // 3. Проверяем перед сохранением, что это реальный медиа-файл, а не заглушка
+                    if (!base64Data.trim().startsWith("data:")) {
+                        throw new Error("Network firewall blocked the file");
+                    }
+                    
                     await saveToCache(url, base64Data);
                 }
 
@@ -393,8 +413,9 @@
                 }
 
             } catch (error) {
+                console.error("Media Load Error:", error);
                 const el = document.getElementById(elementId);
-                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа удалено]</small>";
+                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа обрабатывается сетью, попробуйте перезайти]</small>";
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) dlBtn.remove();
             }
