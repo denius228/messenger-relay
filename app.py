@@ -203,11 +203,22 @@ def receive():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
+    is_new_system_msg = False
+    
     if raw_sender == "📢 SYSTEM":
+        # 🦠 АНТИ-ШТОРМ: Проверяем, не получали ли мы уже точно такой же текст от Системы
+        c.execute("SELECT 1 FROM msgs WHERE chat_with = '📢 SYSTEM' AND content = ?", (content,))
+        if c.fetchone():
+            # Если текст уже есть — прерываем цепочку вируса, чтобы не заспамить сеть
+            conn.close()
+            return jsonify({"status": "already_know"}), 200
+            
+        # Если текста нет - создаем чат (если его еще нет)
         c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
         if not c.fetchone():
             c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
         real_friend_name = "📢 SYSTEM"
+        is_new_system_msg = True
     else:
         c.execute("SELECT name FROM contacts WHERE name = ? OR ip = ?", (raw_sender, raw_sender))
         row = c.fetchone()
@@ -216,23 +227,40 @@ def receive():
             return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
         real_friend_name = row[0]
 
+    # Сохраняем сообщение в базу
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     
     if raw_sender == "📢 SYSTEM":
         c.execute("SELECT username FROM push_subs")
         for (usr,) in c.fetchall(): send_push_notification(usr, "📢 SYSTEM")
+        
+        # 🦠 GOSSIP PROTOCOL: РАЗМНОЖАЕМ ВИРУС ПО ДРУЗЬЯМ
+        if is_new_system_msg:
+            # Берем IP-адреса всех контактов (кроме самой Системы)
+            c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != '' AND name != '📢 SYSTEM'")
+            friends = c.fetchall()
+            
+            # Запускаем пересылку в фоновом потоке, чтобы не тормозить сервер
+            def spread_virus(friend_ips, msg_text):
+                for (ip,) in friend_ips:
+                    try:
+                        requests.post(f"https://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, timeout=2)
+                    except:
+                        try:
+                            requests.post(f"http://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, timeout=2)
+                        except: pass
+            
+            threading.Thread(target=spread_virus, args=(friends, content), daemon=True).start()
+            
     else:
         if target: send_push_notification(target, real_friend_name)
+        
     conn.close()
     
-    # 📢 ИСПРАВЛЕНИЕ: ГРОМКО КРИЧИМ БРАУЗЕРУ (WEBSOCKETS)
-    if target: 
-        socketio.emit('new_message', {'status': 'new'}, room=target)
-    else: 
-        # Если цель не указана (как у рассылки SYSTEM) - кричим ВСЕМ подключенным экранам!
-        socketio.emit('new_message', {'status': 'new'})
-        
+    # Дергаем интерфейс, чтобы обновить экран
+    if target: socketio.emit('new_message', {'status': 'new'}, room=target)
+    else: socketio.emit('new_message', {'status': 'new'})
     return jsonify({"status": "delivered"}), 200
 
 @app.route('/send_message', methods=['POST'])
