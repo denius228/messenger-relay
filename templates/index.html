@@ -276,10 +276,13 @@
             alert("Web3 Profile Saved!");
         }
 
+        let isProcessingQR = false;
+
         function generateQR() {
+            if (!myWallet) return; // Ждем генерации кошелька
             document.getElementById('qr-code').innerHTML = "";
             
-            // 👑 УМНОЕ СЖАТИЕ: Укорачиваем публичный ключ со 130 до 66 символов, чтобы QR-код был проще
+            // Сжимаем ключ, чтобы QR был не таким "густым" и читался легче
             const compressedPub = ethers.utils.computePublicKey(myWallet.publicKey, true);
             
             const data = JSON.stringify({ 
@@ -288,40 +291,49 @@
                 ip: window.location.hostname 
             });
             
-            // Увеличили размер квадрата с 150x150 до 220x220
+            // Увеличили размер квадрата до 220х220
             new QRCode(document.getElementById("qr-code"), { 
-                text: data, 
-                width: 220, 
-                height: 220, 
-                colorDark: "#000", 
-                colorLight: "#fff" 
+                text: data, width: 220, height: 220, colorDark: "#000", colorLight: "#fff" 
             });
         }
 
-        function startScanner() {1111111111111111
+        function startScanner() {
             if(html5QrcodeScanner) return;
+            isProcessingQR = false; // Сбрасываем предохранитель при запуске
+            
             html5QrcodeScanner = new Html5Qrcode("reader");
-            // Увеличили qrbox до 250x250 для уверенного захвата
-            html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 15, qrbox: { width: 250, height: 250 } },
+            // Увеличили область захвата (qrbox)
+            html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
                 (decodedText) => {
+                    // Если уже поймали QR долю секунды назад — игнорируем повторы!
+                    if (isProcessingQR) return; 
+                    isProcessingQR = true;
+
                     try {
                         const data = JSON.parse(decodedText);
-                        document.getElementById('new-name').value = data.username;
-                        if (data.ip) document.getElementById('new-ip').value = data.ip;
-                        else document.getElementById('new-ip').value = ''; 
+                        document.getElementById('new-name').value = data.username || "";
+                        document.getElementById('new-ip').value = data.ip || "";
                         
                         // 👑 МАТЕМАТИКА (ДИФФИ-ХЕЛЛМАН)
                         if (data.pub) {
+                            if (!myWallet) throw new Error("Крипто-кошелек еще не загружен!");
                             const sharedSecret = ethers.utils.computeSharedSecret(myWallet.privateKey, data.pub);
                             document.getElementById('new-shared-secret').value = sharedSecret;
                             setStatus("KEYS MIXED SECURELY!");
-                        } else {
-                            document.getElementById('new-shared-secret').value = data.key || "";
+                        } else if (data.key) {
+                            document.getElementById('new-shared-secret').value = data.key;
                             setStatus("QR SCANNED (OLD VERSION)");
+                        } else {
+                            throw new Error("В QR-коде нет ключа!");
                         }
 
                         stopScanner();
-                    } catch(e) { alert("Invalid QR Code"); }
+                    } catch(e) {
+                        isProcessingQR = false; // Снимаем предохранитель, если реально ошибка
+                        // Теперь мы увидим РЕАЛЬНУЮ причину ошибки, если она есть
+                        alert("Ошибка: " + e.message + "\n\nТекст QR: " + decodedText.substring(0, 30) + "...");
+                        stopScanner();
+                    }
                 }, (err) => {}
             );
         }
