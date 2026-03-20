@@ -226,8 +226,13 @@ def receive():
         if target: send_push_notification(target, real_friend_name)
     conn.close()
     
-    if target: socketio.emit('new_message', {'status': 'new'}, room=target)
-    else: socketio.emit('new_message', {'status': 'new'})
+    # 📢 ИСПРАВЛЕНИЕ: ГРОМКО КРИЧИМ БРАУЗЕРУ (WEBSOCKETS)
+    if target: 
+        socketio.emit('new_message', {'status': 'new'}, room=target)
+    else: 
+        # Если цель не указана (как у рассылки SYSTEM) - кричим ВСЕМ подключенным экранам!
+        socketio.emit('new_message', {'status': 'new'})
+        
     return jsonify({"status": "delivered"}), 200
 
 @app.route('/send_message', methods=['POST'])
