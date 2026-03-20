@@ -107,7 +107,17 @@
             
             <div style="background:#182533; padding:12px; border-radius:10px; margin-bottom:15px; text-align:left; border: 1px solid #2b5278;">
                 <span style="font-size:10px; color:#7f91a4; text-transform:uppercase;">SECRET SEED PHRASE (SAVE THIS):</span><br>
-                <b id="my-seed-phrase" style="color:#40a7e3; font-size:14px; line-height:1.5;">Generating...</b>
+                <!-- 🦅 ЭПИЗОД 4: Сделали фразу копируемой через textarea -->
+                <textarea id="my-seed-phrase" style="width:100%; background:none; border:none; color:#40a7e3; font-size:14px; line-height:1.5; font-weight:bold; resize:none;" rows="3" readonly></textarea>
+            </div>
+            
+            <!-- 🦅 ЭПИЗОД 4: Кнопка восстановления Личности -->
+            <div id="restore-identity-section" style="margin-bottom: 15px;">
+                <button onclick="document.getElementById('import-seed-div').style.display='block'; this.style.display='none';" style="background:none; border:1px solid #40a7e3; color:#40a7e3; padding:8px; border-radius:10px; width:100%; font-size:12px; cursor:pointer;">♻️ УЖЕ ЕСТЬ ФРАЗА? ВОССТАНОВИТЬ</button>
+                <div id="import-seed-div" style="display:none; margin-top:10px;">
+                    <input type="text" id="import-seed-input" placeholder="Введите 12 слов через пробел..." style="font-size:12px;">
+                    <button onclick="importWallet()" style="background:#ff9800; color:white; padding:8px; border-radius:10px; width:100%; font-size:12px; border:none; font-weight:bold;">🔥 ЗАГРУЗИТЬ ЛИЧНОСТЬ</button>
+                </div>
             </div>
             
             <p style="font-size:11px; color:#ff4d4d; font-weight:bold; margin-bottom:5px;">⚠️ ДЛЯ СОЗДАНИЯ НЕУЯЗВИМОГО E2EE КАНАЛА ВЫ ОБА ДОЛЖНЫ ОТСКАНИРОВАТЬ QR ДРУГ ДРУГА!</p>
@@ -172,14 +182,11 @@
             });
         }
 
-        // 👑 ЭПИЗОД 3: ВЕРСИЯ БАЗЫ = 2. ДОБАВЛЯЕМ НОВЫЕ ТАБЛИЦЫ
         const dbPromise = new Promise((resolve, reject) => {
             const req = indexedDB.open("SecureChatDB", 2);
             req.onupgradeneeded = e => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains("mediaCache")) db.createObjectStore("mediaCache");
-                
-                // Карманный Сервер: Таблицы для контактов и переписок
                 if (!db.objectStoreNames.contains("contacts")) db.createObjectStore("contacts", { keyPath: "name" });
                 if (!db.objectStoreNames.contains("chats")) db.createObjectStore("chats"); 
             };
@@ -263,8 +270,25 @@
         function showProfile() {
             document.getElementById('profile-modal').style.display = 'block';
             document.getElementById('my-username').value = myUsername;
-            if (myWallet) document.getElementById('my-seed-phrase').innerText = myWallet.mnemonic.phrase;
+            if (myWallet) document.getElementById('my-seed-phrase').value = myWallet.mnemonic.phrase;
             if (myUsername) generateQR();
+        }
+
+        // 🦅 ЭПИЗОД 4: ФУНКЦИЯ ИМПОРТА СТАРОЙ ЛИЧНОСТИ
+        function importWallet() {
+            const seed = document.getElementById('import-seed-input').value.trim();
+            if (seed.split(' ').length !== 12) return alert("Фраза должна состоять ровно из 12 слов!");
+            
+            try {
+                myWallet = ethers.Wallet.fromMnemonic(seed);
+                localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase);
+                document.getElementById('my-seed-phrase').value = myWallet.mnemonic.phrase;
+                document.getElementById('import-seed-div').style.display = 'none';
+                generateQR();
+                alert("Личность успешно восстановлена! Теперь добавьте (отсканируйте) своего друга, чтобы выкачать историю чата с его сервера.");
+            } catch (e) {
+                alert("Неверная Seed-фраза!");
+            }
         }
 
         function saveMyProfile() {
@@ -367,7 +391,6 @@
             const serverContacts = await resp.json();
             const db = await dbPromise;
 
-            // 👑 ЭПИЗОД 3: ТЕЛЕФОН ВОСКРЕШАЕТ СЕРВЕР ИЗ ПЕПЛА
             if (serverContacts.length === 0 && myUsername) {
                 const localContacts = await new Promise(res => {
                     const req = db.transaction("contacts", "readonly").objectStore("contacts").getAll();
@@ -391,11 +414,10 @@
                     });
                     
                     setStatus("SERVER RESTORED!", false);
-                    setTimeout(loadContacts, 500); // Перезапускаем функцию после восстановления
+                    setTimeout(loadContacts, 500); 
                     return;
                 }
             } else if (serverContacts.length > 0) {
-                // Если сервер живой — обновляем локальный бэкап
                 const tx = db.transaction("contacts", "readwrite");
                 tx.objectStore("contacts").clear();
                 serverContacts.forEach(c => tx.objectStore("contacts").put({name: c[0], ip: c[1], key: c[2]}));
@@ -434,9 +456,44 @@
             const username = document.getElementById('new-name').value.trim();
             let ip = document.getElementById('new-ip').value.trim();
             if (!ip) ip = username; 
+            
             const sharedKey = document.getElementById('new-shared-secret').value.trim();
             if(!username || !sharedKey) return alert("Пожалуйста, отсканируйте QR-код друга!");
+            
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: sharedKey}) });
+            
+            // 🦅 ЭПИЗОД 4: ПРОТОКОЛ ФЕНИКС - ПРОСИМ ДРУГА СКИНУТЬ ИСТОРИЮ
+            try {
+                setStatus("Phoenix: Requesting chat backup...");
+                // Создаем крипто-подпись "RESTORE_CHAT" своим приватным ключом
+                const signature = await myWallet.signMessage("RESTORE_CHAT");
+                
+                // Делаем запрос к серверу друга с нашей подписью
+                const resp = await fetch(`https://${ip}/api/messages?chat_with=${encodeURIComponent(myUsername)}&sig=${signature}&pub=${myWallet.publicKey}`);
+                
+                if (resp.ok) {
+                    const friendMessages = await resp.json();
+                    if (friendMessages && friendMessages.length > 0) {
+                        // Инвертируем отправителей (то, что у него "Me", у нас - его Имя)
+                        const restoredData = friendMessages.map(m => {
+                            const isFromHim = (m[0] === 'Me');
+                            const sender = isFromHim ? username : myUsername;
+                            return [username, sender, m[1], m[2]]; 
+                        });
+                        
+                        // Заливаем восстановленный чат на наш пустой локальный сервер
+                        await fetch('/api/messages/save_synced', { 
+                            method: 'POST', 
+                            headers: {'Content-Type': 'application/json'}, 
+                            body: JSON.stringify({messages: restoredData}) 
+                        });
+                        setStatus("PHOENIX: CHAT RESTORED!");
+                    }
+                }
+            } catch(e) {
+                console.log("Phoenix auth/fetch error. (Friend's server might restrict unauthenticated access yet).");
+            }
+
             closeModals();
             document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-shared-secret').value = '';
             loadContacts();
@@ -450,7 +507,6 @@
                 const messages = await resp.json();
                 const chat = document.getElementById('chat');
                 
-                // 👑 ЭПИЗОД 3: ТИХИЙ БЭКАП ПЕРЕПИСКИ В ТЕЛЕФОН
                 if (messages.length > 0) {
                     const db = await dbPromise;
                     const backupMsgs = messages.map(m => [activeContact.username, m[0], m[1], m[2]]);
