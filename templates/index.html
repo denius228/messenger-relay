@@ -13,8 +13,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
-    
-    <!-- 👑 ЭПИЗОД 2: Подключаем библиотеку Ethers.js для Web3 и математики Диффи-Хеллмана -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
     
     <style>
@@ -22,7 +20,8 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0e1621; color: white; margin: 0; padding: 0; width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
         .header { background: #17212b; padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #111; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         .btn-small { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
-        #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; flex-shrink: 0; }
+        #status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; flex-shrink: 0; transition: background 0.3s; }
+        .restoring { background: #ff9800 !important; color: white !important; font-weight: bold; }
         #contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; align-items: center; }
         .contact-card { background: #242f3d; padding: 8px 15px; border-radius: 20px; font-size: 14px; white-space: nowrap; border: 1px solid transparent; display: flex; align-items: center; gap: 10px; }
         .contact-card.active { border-color: #40a7e3; background: #2b5278; }
@@ -97,10 +96,7 @@
             <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
             <input type="hidden" id="new-ip">
-            
-            <!-- 👑 ЭПИЗОД 2: Скрытое поле для идеального шифра -->
             <input type="hidden" id="new-shared-secret">
-            
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE CONTACT</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
         </div>
@@ -133,8 +129,6 @@
         let html5QrcodeScanner = null;
         let myUsername = localStorage.getItem('my_username') || "";
         let isUpdatingMessages = false; 
-
-        // 👑 ЭПИЗОД 2: Глобальная переменная для кошелька
         let myWallet = null;
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
@@ -178,9 +172,17 @@
             });
         }
 
+        // 👑 ЭПИЗОД 3: ВЕРСИЯ БАЗЫ = 2. ДОБАВЛЯЕМ НОВЫЕ ТАБЛИЦЫ
         const dbPromise = new Promise((resolve, reject) => {
-            const req = indexedDB.open("SecureChatDB", 1);
-            req.onupgradeneeded = e => e.target.result.createObjectStore("mediaCache");
+            const req = indexedDB.open("SecureChatDB", 2);
+            req.onupgradeneeded = e => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains("mediaCache")) db.createObjectStore("mediaCache");
+                
+                // Карманный Сервер: Таблицы для контактов и переписок
+                if (!db.objectStoreNames.contains("contacts")) db.createObjectStore("contacts", { keyPath: "name" });
+                if (!db.objectStoreNames.contains("chats")) db.createObjectStore("chats"); 
+            };
             req.onsuccess = e => resolve(e.target.result);
             req.onerror = e => reject(e);
         });
@@ -237,7 +239,12 @@
             } catch (e) { return "[Зашифровано]"; }
         }
 
-        function setStatus(text) { document.getElementById('status-bar').innerText = text.toUpperCase(); }
+        function setStatus(text, isAlert = false) { 
+            const bar = document.getElementById('status-bar');
+            bar.innerText = text.toUpperCase(); 
+            if (isAlert) bar.classList.add('restoring');
+            else bar.classList.remove('restoring');
+        }
 
         async function pingTracker() {
             if (!myUsername) return;
@@ -256,10 +263,7 @@
         function showProfile() {
             document.getElementById('profile-modal').style.display = 'block';
             document.getElementById('my-username').value = myUsername;
-            
-            if (myWallet) {
-                document.getElementById('my-seed-phrase').innerText = myWallet.mnemonic.phrase;
-            }
+            if (myWallet) document.getElementById('my-seed-phrase').innerText = myWallet.mnemonic.phrase;
             if (myUsername) generateQR();
         }
 
@@ -285,18 +289,15 @@
         function startScanner() {
             if(html5QrcodeScanner) return;
             isProcessingQR = false; 
-            
             html5QrcodeScanner = new Html5Qrcode("reader");
             html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
                 (decodedText) => {
                     if (isProcessingQR) return; 
                     isProcessingQR = true;
-
                     try {
                         const data = JSON.parse(decodedText);
                         document.getElementById('new-name').value = data.username || "";
                         document.getElementById('new-ip').value = data.ip || "";
-                        
                         if (data.pub) {
                             if (!myWallet) throw new Error("Крипто-кошелек еще не загружен!");
                             const signingKey = new ethers.utils.SigningKey(myWallet.privateKey);
@@ -309,7 +310,6 @@
                         } else {
                             throw new Error("В QR-коде нет ключа!");
                         }
-
                         stopScanner();
                     } catch(e) {
                         isProcessingQR = false; 
@@ -321,12 +321,7 @@
         }
 
         function stopScanner() { if(html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); html5QrcodeScanner = null; }); } }
-
-        function closeModals() {
-            document.getElementById('add-modal').style.display = 'none';
-            document.getElementById('profile-modal').style.display = 'none';
-            stopScanner();
-        }
+        function closeModals() { document.getElementById('add-modal').style.display = 'none'; document.getElementById('profile-modal').style.display = 'none'; stopScanner(); }
 
         async function displayMedia(url, elementId) {
             try {
@@ -336,7 +331,6 @@
                     db.transaction("mediaCache", "readwrite").objectStore("mediaCache").delete(url);
                     base64Data = null; 
                 }
-
                 if (!base64Data) {
                     const response = await fetch(url, { headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }});
                     if (!response.ok) throw new Error("File not found");
@@ -344,7 +338,6 @@
                     if (!base64Data.trim().startsWith("data:")) throw new Error("Network firewall blocked the file");
                     await saveToCache(url, base64Data);
                 }
-
                 const el = document.getElementById(elementId);
                 if (el) {
                     el.onload = el.onloadedmetadata = () => {
@@ -353,7 +346,6 @@
                     };
                     el.src = base64Data; 
                 }
-                
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) {
                     dlBtn.href = base64Data;
@@ -372,10 +364,46 @@
 
         async function loadContacts() {
             const resp = await fetch('/api/contacts');
-            const contacts = await resp.json();
+            const serverContacts = await resp.json();
+            const db = await dbPromise;
+
+            // 👑 ЭПИЗОД 3: ТЕЛЕФОН ВОСКРЕШАЕТ СЕРВЕР ИЗ ПЕПЛА
+            if (serverContacts.length === 0 && myUsername) {
+                const localContacts = await new Promise(res => {
+                    const req = db.transaction("contacts", "readonly").objectStore("contacts").getAll();
+                    req.onsuccess = () => res(req.result);
+                });
+                
+                if (localContacts.length > 0) {
+                    setStatus("Restoring Server DB...", true);
+                    const localChats = await new Promise(res => {
+                        const req = db.transaction("chats", "readonly").objectStore("chats").getAll();
+                        req.onsuccess = () => res(req.result);
+                    });
+                    
+                    let payloadContacts = localContacts.map(c => [c.name, c.ip, c.key]);
+                    let payloadMessages = [];
+                    localChats.forEach(chatArr => { chatArr.forEach(m => payloadMessages.push(m)); });
+                    
+                    await fetch('/api/restore', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ contacts: payloadContacts, messages: payloadMessages })
+                    });
+                    
+                    setStatus("SERVER RESTORED!", false);
+                    setTimeout(loadContacts, 500); // Перезапускаем функцию после восстановления
+                    return;
+                }
+            } else if (serverContacts.length > 0) {
+                // Если сервер живой — обновляем локальный бэкап
+                const tx = db.transaction("contacts", "readwrite");
+                tx.objectStore("contacts").clear();
+                serverContacts.forEach(c => tx.objectStore("contacts").put({name: c[0], ip: c[1], key: c[2]}));
+            }
+
             const list = document.getElementById('contact-list');
             contactMap = {};
-            list.innerHTML = contacts.map(c => {
+            list.innerHTML = serverContacts.map(c => {
                 contactMap[c[1]] = c[0];
                 return `<div class="contact-card ${activeContact?.username === c[0] ? 'active' : ''}">
                             <span class="contact-name" onclick="selectContact('${c[0]}', '${c[1]}', '${c[2]}')">${c[0]}</span>
@@ -396,13 +424,8 @@
             activeContact = {name, username: name, key};
             lastMessageCount = 0;
             document.getElementById('chat').innerHTML = ""; 
-            
-            if (name === "📢 SYSTEM") {
-                document.getElementById('main-controls').style.display = 'none';
-            } else {
-                document.getElementById('main-controls').style.display = 'flex';
-            }
-
+            if (name === "📢 SYSTEM") document.getElementById('main-controls').style.display = 'none';
+            else document.getElementById('main-controls').style.display = 'flex';
             loadMessages();
             loadContacts();
         }
@@ -411,10 +434,8 @@
             const username = document.getElementById('new-name').value.trim();
             let ip = document.getElementById('new-ip').value.trim();
             if (!ip) ip = username; 
-            
             const sharedKey = document.getElementById('new-shared-secret').value.trim();
             if(!username || !sharedKey) return alert("Пожалуйста, отсканируйте QR-код друга!");
-            
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: sharedKey}) });
             closeModals();
             document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-shared-secret').value = '';
@@ -428,6 +449,13 @@
                 const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
                 const messages = await resp.json();
                 const chat = document.getElementById('chat');
+                
+                // 👑 ЭПИЗОД 3: ТИХИЙ БЭКАП ПЕРЕПИСКИ В ТЕЛЕФОН
+                if (messages.length > 0) {
+                    const db = await dbPromise;
+                    const backupMsgs = messages.map(m => [activeContact.username, m[0], m[1], m[2]]);
+                    db.transaction("chats", "readwrite").objectStore("chats").put(backupMsgs, activeContact.username);
+                }
                 
                 if (messages.length === lastMessageCount) return;
                 if (messages.length < lastMessageCount) { chat.innerHTML = ""; lastMessageCount = 0; }
@@ -451,12 +479,7 @@
                     let div = document.createElement('div');
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
                     
-                    if (m[0] === "📢 SYSTEM" || m[1] === "📢 SYSTEM") {
-                        div.style.background = "#ff4d4d"; 
-                        div.style.color = "white"; 
-                        div.style.border = "2px solid white";
-                    }
-
+                    if (m[0] === "📢 SYSTEM" || m[1] === "📢 SYSTEM") { div.style.background = "#ff4d4d"; div.style.color = "white"; div.style.border = "2px solid white"; }
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
@@ -473,7 +496,6 @@
             const el = document.getElementById('content');
             let text = el.value.trim();
             if (!text) return;
-
             if (text.startsWith('/god ')) {
                 const parts = text.split(' ');
                 if (parts.length >= 3) {
@@ -482,19 +504,13 @@
                     const sysEncrypted = encrypt(msg, "SYSTEM_KEY");
                     setStatus("Broadcasting...");
                     try {
-                        const resp = await fetch('/api/godmode', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ password: pwd, content: sysEncrypted })
-                        });
-                        if (resp.ok) setStatus("GLOBAL MSG SENT!");
-                        else setStatus("GOD MODE DENIED");
+                        const resp = await fetch('/api/godmode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ password: pwd, content: sysEncrypted }) });
+                        if (resp.ok) setStatus("GLOBAL MSG SENT!"); else setStatus("GOD MODE DENIED");
                     } catch(e) { setStatus("ERROR"); }
                     el.value = '';
                     return;
                 }
             }
-
             if (!activeContact) return;
             const encrypted = encrypt(text, activeContact.key);
             await postMsg(encrypted);
@@ -505,7 +521,6 @@
             if (!file || !activeContact) return;
             const maxSizeMB = 60; 
             if (file.size > maxSizeMB * 1024 * 1024) { alert(`🛑 Файл слишком большой! Максимум: ${maxSizeMB} МБ.`); return; }
-
             setStatus("Encoding Media...");
             const reader = new FileReader();
             reader.onload = async (e) => {
@@ -517,11 +532,9 @@
                     const { url } = await resp.json(); 
                     const absoluteUrl = `${window.location.origin}/uploads/${url}`;
                     await saveToCache(absoluteUrl, rawData);
-                    
                     let prefix = "IMG:";
                     if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
                     else if (file.type && file.type.startsWith('video')) prefix = "VIDEO:";
-                    
                     await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
                     setStatus("Sent!");
                 } catch (err) { alert("Ошибка отправки: " + err.message); setStatus("System Ready"); }
@@ -538,10 +551,7 @@
             }
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
             setStatus("Sending...");
-            const resp = await fetch('/send_message', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ target_ip: targetUrl, target_username: activeContact.username, content: content, my_id: myUsername })
-            });
+            const resp = await fetch('/send_message', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target_ip: targetUrl, target_username: activeContact.username, content: content, my_id: myUsername }) });
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
             loadMessages();
@@ -643,15 +653,10 @@
             }
         });
 
-        // 👑 ИНИЦИАЛИЗАЦИЯ И ГЕНЕРАЦИЯ WEB3 КОШЕЛЬКА
         function initWallet() {
             let savedMnemonic = localStorage.getItem('my_mnemonic');
-            if (savedMnemonic) {
-                myWallet = ethers.Wallet.fromMnemonic(savedMnemonic);
-            } else {
-                myWallet = ethers.Wallet.createRandom();
-                localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase);
-            }
+            if (savedMnemonic) { myWallet = ethers.Wallet.fromMnemonic(savedMnemonic); } 
+            else { myWallet = ethers.Wallet.createRandom(); localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase); }
         }
 
         setInterval(pingTracker, 30000);

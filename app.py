@@ -5,7 +5,6 @@ from pywebpush import webpush, WebPushException
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
-# ⚡ БИБЛИОТЕКА WEBSOCKETS
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
@@ -14,9 +13,6 @@ app.secret_key = 'HIFI_STABLE_V10'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# ==========================================
-# НАСТРОЙКИ ПАПОК
-# ==========================================
 UPLOAD_FOLDER = 'uploads'
 DB_DIR = 'db_data'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -72,9 +68,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ==========================================
-# WEBSOCKETS ЛОГИКА
-# ==========================================
 @socketio.on('join')
 def on_join(data):
     username = data.get('username')
@@ -88,9 +81,6 @@ def on_typing(data):
     if target and sender:
         emit('user_typing', {'sender': sender}, room=target)
 
-# ==========================================
-# РОУТЫ И ЛОГИКА
-# ==========================================
 @app.route('/sw.js')
 def serve_sw(): return app.send_static_file('sw.js')
 
@@ -168,34 +158,24 @@ def send_push_notification(target_username, sender_username):
             )
         except Exception: pass
 
-# 👑 ЭПИЗОД 1: СЕКРЕТНЫЙ РОУТ РЕЖИМА БОГА
 @app.route('/api/godmode', methods=['POST'])
 def api_godmode():
     if not session.get('auth'): return "No Auth", 403
     data = request.json
     if data.get('password') != '777': return "Bad Password", 403
-    
     content = data.get('content')
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Берем ВСЕ известные домены из трекера
     c.execute("SELECT DISTINCT current_url FROM tracker WHERE current_url IS NOT NULL")
     urls = c.fetchall()
     conn.close()
-    
     success = 0
     for row in urls:
         target_url = row[0]
         try:
-            requests.post(f"https://{target_url}/receive", json={
-                "sender_username": "📢 SYSTEM",
-                "target": "", 
-                "content": content
-            }, timeout=3)
+            requests.post(f"https://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, timeout=3)
             success += 1
         except: pass
-        
     return jsonify({"status": f"Broadcasted to {success} nodes"})
 
 @app.route('/receive', methods=['POST'])
@@ -204,11 +184,9 @@ def receive():
     raw_sender = data.get('sender_username') or data.get('sender', '').split(':')[0]
     target = data.get('target')
     content = data.get('content')
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # 👑 ЭПИЗОД 1: Исключение Anti-Spam для SYSTEM
     if raw_sender == "📢 SYSTEM":
         c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
         if not c.fetchone():
@@ -227,25 +205,18 @@ def receive():
     
     if raw_sender == "📢 SYSTEM":
         c.execute("SELECT username FROM push_subs")
-        for (usr,) in c.fetchall():
-            send_push_notification(usr, "📢 SYSTEM")
+        for (usr,) in c.fetchall(): send_push_notification(usr, "📢 SYSTEM")
     else:
-        if target:
-            send_push_notification(target, real_friend_name)
-            
+        if target: send_push_notification(target, real_friend_name)
     conn.close()
     
-    if target: 
-        socketio.emit('new_message', {'status': 'new'}, room=target)
-    else:
-        socketio.emit('new_message', {'status': 'new'}) # Broadcast
-        
+    if target: socketio.emit('new_message', {'status': 'new'}, room=target)
+    else: socketio.emit('new_message', {'status': 'new'})
     return jsonify({"status": "delivered"}), 200
 
 @app.route('/send_message', methods=['POST'])
 def send():
     if not session.get('auth'): return "No Auth", 403
-    
     data = request.json
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
     target_username = data.get('target_username')
@@ -260,12 +231,7 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        resp = requests.post(url, json={
-            "sender": my_username, 
-            "sender_username": my_username, 
-            "target": target_username, 
-            "content": content
-        }, timeout=10)
+        resp = requests.post(url, json={"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}, timeout=10)
         if resp.status_code == 200: return "OK"
         raise Exception()
     except:
@@ -281,18 +247,15 @@ def manage_contacts():
     if not session.get('auth'): return jsonify({"error": "No Auth"}), 403
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
     if request.method == 'POST':
         d = request.json
         clean_ip = d['ip'].replace('https://','').replace('http://','').strip('/')
         c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (d['name'], clean_ip, d['key']))
         conn.commit()
-        
     elif request.method == 'DELETE':
         d = request.json
         c.execute("DELETE FROM contacts WHERE name = ?", (d['name'],))
         conn.commit()
-
     c.execute("SELECT * FROM contacts")
     res = c.fetchall()
     conn.close()
@@ -329,11 +292,34 @@ def save_synced():
     data = request.json.get('messages', [])
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    for m in data:
-        c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[0], m[1], m[2]))
+    for m in data: c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[0], m[1], m[2]))
     conn.commit()
     conn.close()
     return "OK"
+
+# 👑 ЭПИЗОД 3: СЕРВЕР ПРИНИМАЕТ "ПРОШИВКУ" ОТ ТЕЛЕФОНА
+@app.route('/api/restore', methods=['POST'])
+def api_restore():
+    if not session.get('auth'): return "No Auth", 403
+    data = request.json
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    # Восстанавливаем контакты
+    for ct in data.get('contacts', []):
+        c.execute("SELECT 1 FROM contacts WHERE name=?", (ct[0],))
+        if not c.fetchone():
+            c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (ct[0], ct[1], ct[2]))
+            
+    # Восстанавливаем переписку
+    for m in data.get('messages', []):
+        c.execute("SELECT 1 FROM msgs WHERE chat_with=? AND content=? AND timestamp=?", (m[0], m[2], m[3]))
+        if not c.fetchone():
+            c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[1], m[2], m[3]))
+            
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "restored"})
 
 @app.route('/api/typing', methods=['POST'])
 def api_typing():
@@ -342,10 +328,7 @@ def api_typing():
     target_username = data.get('target_username')
     sender_username = data.get('my_id')
     status_type = data.get('status_type', 'typing') 
-    
-    try:
-        url = f"https://{target}/receive_typing"
-        requests.post(url, json={"sender_username": sender_username, "target": target_username, "status_type": status_type}, timeout=2)
+    try: requests.post(f"https://{target}/receive_typing", json={"sender_username": sender_username, "target": target_username, "status_type": status_type}, timeout=2)
     except: pass
     return "OK"
 
