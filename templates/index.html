@@ -101,7 +101,10 @@
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
-            <input type="text" id="new-ip" placeholder="External URL (Optional)">
+            
+            <!-- 🪄 ЭПИЗОД 0: Прячем поле IP. Оно заполняется сканером -->
+            <input type="hidden" id="new-ip">
+            
             <input type="text" id="new-key" placeholder="Secret Key">
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
@@ -315,7 +318,14 @@
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
             const key = document.getElementById('my-secret-key').value;
-            const data = JSON.stringify({ username: myUsername, key: key });
+            
+            // 🪄 ЭПИЗОД 0: Добавляем текущий домен сервера в зашифрованный QR
+            const data = JSON.stringify({ 
+                username: myUsername, 
+                key: key, 
+                ip: window.location.hostname 
+            });
+            
             new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
         }
 
@@ -328,6 +338,14 @@
                         const data = JSON.parse(decodedText);
                         document.getElementById('new-name').value = data.username;
                         document.getElementById('new-key').value = data.key;
+                        
+                        // 🪄 ЭПИЗОД 0: Тихо прописываем домен друга из его QR-кода
+                        if (data.ip) {
+                            document.getElementById('new-ip').value = data.ip;
+                        } else {
+                            document.getElementById('new-ip').value = ''; 
+                        }
+                        
                         stopScanner();
                         setStatus("QR SCANNED!");
                     } catch(e) { alert("Invalid QR Code"); }
