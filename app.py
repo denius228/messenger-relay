@@ -4,8 +4,6 @@ from flask_cors import CORS
 from pywebpush import webpush, WebPushException
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
-
-# ⚡ БИБЛИОТЕКА WEBSOCKETS
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
@@ -14,9 +12,13 @@ app.secret_key = 'HIFI_STABLE_V10'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# ==========================================
-# НАСТРОЙКИ ПАПОК
-# ==========================================
+# 🛡 ЗАЩИТА ОТ БЛОКИРОВОК CLOUDFLARE И NGROK
+REQ_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "ngrok-skip-browser-warning": "true",
+    "Bypass-Tunnel-Reminder": "true"
+}
+
 UPLOAD_FOLDER = 'uploads'
 DB_DIR = 'db_data'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -75,15 +77,13 @@ def init_db():
 @socketio.on('join')
 def on_join(data):
     username = data.get('username')
-    if username:
-        join_room(username)
+    if username: join_room(username)
 
 @socketio.on('typing')
 def on_typing(data):
     target = data.get('target')
     sender = data.get('sender')
-    if target and sender:
-        emit('user_typing', {'sender': sender}, room=target)
+    if target and sender: emit('user_typing', {'sender': sender}, room=target)
 
 @app.route('/sw.js')
 def serve_sw(): return app.send_static_file('sw.js')
@@ -148,7 +148,6 @@ def send_push_notification(target_username, sender_username):
     c.execute("SELECT sub_json FROM push_subs WHERE username = ?", (target_username,))
     row = c.fetchone()
     conn.close()
-    
     if row:
         try:
             subscription_info = json.loads(row[0])
@@ -171,27 +170,20 @@ def api_godmode():
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
     urls = set()
     c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
     for row in c.fetchall(): urls.add(row[0])
-        
     c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != ''")
     for row in c.fetchall(): urls.add(row[0])
-        
     conn.close()
     
     success = 0
     for target_url in urls:
         try:
-            # 🛠 УМНАЯ РАССЫЛКА: Пробуем HTTPS, если отказ (тестовый IP) - бьем через HTTP
-            try:
-                requests.post(f"https://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, timeout=3)
-            except:
-                requests.post(f"http://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, timeout=3)
+            try: requests.post(f"https://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, headers=REQ_HEADERS, timeout=5)
+            except: requests.post(f"http://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, headers=REQ_HEADERS, timeout=5)
             success += 1
         except: pass
-        
     return jsonify({"status": f"Broadcasted to {success} nodes"})
 
 @app.route('/receive', methods=['POST'])
@@ -206,14 +198,12 @@ def receive():
     is_new_system_msg = False
     
     if raw_sender == "📢 SYSTEM":
-        # 🦠 АНТИ-ШТОРМ: Проверяем, не получали ли мы уже точно такой же текст от Системы
+        # 🦠 АНТИ-ШТОРМ: Проверка на дубликат вирусного сообщения
         c.execute("SELECT 1 FROM msgs WHERE chat_with = '📢 SYSTEM' AND content = ?", (content,))
         if c.fetchone():
-            # Если текст уже есть — прерываем цепочку вируса, чтобы не заспамить сеть
             conn.close()
             return jsonify({"status": "already_know"}), 200
             
-        # Если текста нет - создаем чат (если его еще нет)
         c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
         if not c.fetchone():
             c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
@@ -227,7 +217,6 @@ def receive():
             return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
         real_friend_name = row[0]
 
-    # Сохраняем сообщение в базу
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
     
@@ -235,30 +224,22 @@ def receive():
         c.execute("SELECT username FROM push_subs")
         for (usr,) in c.fetchall(): send_push_notification(usr, "📢 SYSTEM")
         
-        # 🦠 GOSSIP PROTOCOL: РАЗМНОЖАЕМ ВИРУС ПО ДРУЗЬЯМ
+        # 🦠 GOSSIP PROTOCOL (ВИРУС): Пересылаем дальше друзьям (с обходом Cloudflare)
         if is_new_system_msg:
-            # Берем IP-адреса всех контактов (кроме самой Системы)
             c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != '' AND name != '📢 SYSTEM'")
             friends = c.fetchall()
-            
-            # Запускаем пересылку в фоновом потоке, чтобы не тормозить сервер
             def spread_virus(friend_ips, msg_text):
                 for (ip,) in friend_ips:
-                    try:
-                        requests.post(f"https://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, timeout=2)
+                    try: requests.post(f"https://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, headers=REQ_HEADERS, timeout=5)
                     except:
-                        try:
-                            requests.post(f"http://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, timeout=2)
+                        try: requests.post(f"http://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, headers=REQ_HEADERS, timeout=5)
                         except: pass
-            
             threading.Thread(target=spread_virus, args=(friends, content), daemon=True).start()
-            
     else:
         if target: send_push_notification(target, real_friend_name)
         
     conn.close()
     
-    # Дергаем интерфейс, чтобы обновить экран
     if target: socketio.emit('new_message', {'status': 'new'}, room=target)
     else: socketio.emit('new_message', {'status': 'new'})
     return jsonify({"status": "delivered"}), 200
@@ -280,7 +261,8 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        resp = requests.post(url, json={"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}, timeout=10)
+        # 🛡 Обход Cloudflare для обычных сообщений
+        resp = requests.post(url, json={"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}, headers=REQ_HEADERS, timeout=10)
         if resp.status_code == 200: return "OK"
         raise Exception()
     except:
@@ -313,14 +295,12 @@ def manage_contacts():
 @app.route('/api/messages')
 def get_messages():
     chat_with = request.args.get('chat_with')
-    secret = request.args.get('secret') # Ключ для восстановления Феникс
+    secret = request.args.get('secret') 
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # 1. 🦅 ПРОТОКОЛ ФЕНИКС (запрос от друга на выкачивание базы)
     if chat_with and secret:
-        # Проверяем математический шифр Диффи-Хеллмана
         c.execute("SELECT name FROM contacts WHERE name = ? AND secret_key = ?", (chat_with, secret))
         if c.fetchone():
             c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
@@ -329,9 +309,8 @@ def get_messages():
             return jsonify(messages)
         else:
             conn.close()
-            return jsonify([]) # Защита от хакеров
+            return jsonify([]) 
 
-    # 2. ОБЫЧНЫЙ РЕЖИМ (показ чата владельцу сервера)
     if session.get('auth'):
         if not chat_with: 
             conn.close()
@@ -374,19 +353,12 @@ def api_restore():
     data = request.json
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
-    # Восстанавливаем контакты
     for ct in data.get('contacts', []):
         c.execute("SELECT 1 FROM contacts WHERE name=?", (ct[0],))
-        if not c.fetchone():
-            c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (ct[0], ct[1], ct[2]))
-            
-    # Восстанавливаем переписку
+        if not c.fetchone(): c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (ct[0], ct[1], ct[2]))
     for m in data.get('messages', []):
         c.execute("SELECT 1 FROM msgs WHERE chat_with=? AND content=? AND timestamp=?", (m[0], m[2], m[3]))
-        if not c.fetchone():
-            c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[1], m[2], m[3]))
-            
+        if not c.fetchone(): c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[1], m[2], m[3]))
     conn.commit()
     conn.close()
     return jsonify({"status": "restored"})
@@ -398,7 +370,7 @@ def api_typing():
     target_username = data.get('target_username')
     sender_username = data.get('my_id')
     status_type = data.get('status_type', 'typing') 
-    try: requests.post(f"https://{target}/receive_typing", json={"sender_username": sender_username, "target": target_username, "status_type": status_type}, timeout=2)
+    try: requests.post(f"https://{target}/receive_typing", json={"sender_username": sender_username, "target": target_username, "status_type": status_type}, headers=REQ_HEADERS, timeout=2)
     except: pass
     return "OK"
 
