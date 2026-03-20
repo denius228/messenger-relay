@@ -14,6 +14,9 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     
+    <!-- 👑 ЭПИЗОД 2: Подключаем библиотеку Ethers.js для Web3 и математики Диффи-Хеллмана -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0e1621; color: white; margin: 0; padding: 0; width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
@@ -78,7 +81,8 @@
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
-                <input type="text" id="content" placeholder="Message... (/god 777 text)" 
+                <!-- 👑 Убрал палево из строки ввода -->
+                <input type="text" id="content" placeholder="Message..." 
                     oninput="notifyTyping('typing')" 
                     onkeypress="if(event.key === 'Enter') sendText()" 
                     onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
@@ -94,18 +98,28 @@
             <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
             <input type="hidden" id="new-ip">
-            <input type="text" id="new-key" placeholder="Secret Key">
-            <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
+            
+            <!-- 👑 ЭПИЗОД 2: Поле с ручным ключом заменено на скрытое, куда скрипт запишет результат смешивания (Диффи-Хеллман) -->
+            <input type="hidden" id="new-shared-secret">
+            
+            <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE CONTACT</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
         </div>
 
         <div id="profile-modal" class="modal">
-            <h3>My Profile</h3>
+            <h3>Web3 Identity</h3>
             <input type="text" id="my-username" placeholder="My Username (e.g. @bob)">
-            <input type="text" id="my-secret-key" placeholder="My Secret Key">
-            <p style="font-size:12px; color:gray;">Show this QR to your friend</p>
+            
+            <!-- 👑 ЭПИЗОД 2: Вывод Seed-фразы -->
+            <div style="background:#182533; padding:12px; border-radius:10px; margin-bottom:15px; text-align:left; border: 1px solid #2b5278;">
+                <span style="font-size:10px; color:#7f91a4; text-transform:uppercase;">SECRET SEED PHRASE (SAVE THIS):</span><br>
+                <b id="my-seed-phrase" style="color:#40a7e3; font-size:14px; line-height:1.5;">Generating...</b>
+            </div>
+            
+            <p style="font-size:11px; color:#ff4d4d; font-weight:bold; margin-bottom:5px;">⚠️ ДЛЯ СОЗДАНИЯ НЕУЯЗВИМОГО E2EE КАНАЛА ВЫ ОБА ДОЛЖНЫ ОТСКАНИРОВАТЬ QR ДРУГ ДРУГА!</p>
+            
             <div id="qr-code"></div>
-            <button onclick="saveMyProfile()" style="background:#40a7e3; color:white; padding:10px; border-radius:10px; width:100%; font-size:14px; border:none; font-weight:bold; margin-bottom:10px;">SAVE & UPDATE QR</button>
+            <button onclick="saveMyProfile()" style="background:#40a7e3; color:white; padding:10px; border-radius:10px; width:100%; font-size:14px; border:none; font-weight:bold; margin-bottom:10px;">SAVE PROFILE & UPDATE QR</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; background:none; border:none;">CLOSE</button>
         </div>
     {% endif %}
@@ -122,6 +136,9 @@
         let myUsername = localStorage.getItem('my_username') || "";
         let isUpdatingMessages = false; 
 
+        // 👑 ЭПИЗОД 2: Глобальная переменная для кошелька
+        let myWallet = null;
+
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
         const socket = io(); 
         let typingTimeout = null, lastTypingTime = 0;
@@ -130,7 +147,7 @@
             isUpdatingMessages = false; 
             loadMessages();
             document.getElementById('typing-indicator').style.display = 'none'; 
-            loadContacts(); // Чтобы 📢 SYSTEM сразу появился в списке
+            loadContacts(); 
         });
 
         socket.on('user_typing', function(data) {
@@ -241,26 +258,32 @@
         function showProfile() {
             document.getElementById('profile-modal').style.display = 'block';
             document.getElementById('my-username').value = myUsername;
-            if(!document.getElementById('my-secret-key').value) document.getElementById('my-secret-key').value = localStorage.getItem('my_key') || "7777";
+            
+            // 👑 ЭПИЗОД 2: Показываем сгенерированные 12 слов
+            if (myWallet) {
+                document.getElementById('my-seed-phrase').innerText = myWallet.mnemonic.phrase;
+            }
             if (myUsername) generateQR();
         }
 
         function saveMyProfile() {
             myUsername = document.getElementById('my-username').value.trim();
-            const myKey = document.getElementById('my-secret-key').value.trim();
-            if(!myUsername || !myKey) return alert("Fill username and key!");
+            if(!myUsername) return alert("Fill username!");
             localStorage.setItem('my_username', myUsername);
-            localStorage.setItem('my_key', myKey);
             generateQR();
             pingTracker();
             socket.emit('join', { username: myUsername });
-            alert("Profile Saved!");
+            alert("Web3 Profile Saved!");
         }
 
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
-            const key = document.getElementById('my-secret-key').value;
-            const data = JSON.stringify({ username: myUsername, key: key, ip: window.location.hostname });
+            // 👑 ЭПИЗОД 2: Теперь зашиваем в QR Публичный Ключ вместо старого пароля
+            const data = JSON.stringify({ 
+                username: myUsername, 
+                pub: myWallet.publicKey, 
+                ip: window.location.hostname 
+            });
             new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
         }
 
@@ -272,11 +295,22 @@
                     try {
                         const data = JSON.parse(decodedText);
                         document.getElementById('new-name').value = data.username;
-                        document.getElementById('new-key').value = data.key;
                         if (data.ip) document.getElementById('new-ip').value = data.ip;
                         else document.getElementById('new-ip').value = ''; 
+                        
+                        // 👑 ЭПИЗОД 2: ВЕЛИКАЯ МАТЕМАТИКА (ДИФФИ-ХЕЛЛМАН)
+                        if (data.pub) {
+                            // Смешиваем НАШ Приватный ключ с ИХ Публичным ключом = Идеальный шифр 64 байта
+                            const sharedSecret = ethers.utils.computeSharedSecret(myWallet.privateKey, data.pub);
+                            document.getElementById('new-shared-secret').value = sharedSecret;
+                            setStatus("KEYS MIXED SECURELY!");
+                        } else {
+                            // Резервный вариант, если друг еще не обновился и у него старый QR
+                            document.getElementById('new-shared-secret').value = data.key || "";
+                            setStatus("QR SCANNED (OLD VERSION)");
+                        }
+
                         stopScanner();
-                        setStatus("QR SCANNED!");
                     } catch(e) { alert("Invalid QR Code"); }
                 }, (err) => {}
             );
@@ -290,7 +324,6 @@
             stopScanner();
         }
 
-        // ИСПРАВЛЕНИЕ МЕДИА ДЛЯ NGROK
         async function displayMedia(url, elementId) {
             try {
                 let base64Data = await getFromCache(url); 
@@ -360,7 +393,6 @@
             lastMessageCount = 0;
             document.getElementById('chat').innerHTML = ""; 
             
-            // 👑 ЭПИЗОД 1: READ-ONLY РЕЖИМ ДЛЯ ЧАТА С СИСТЕМОЙ
             if (name === "📢 SYSTEM") {
                 document.getElementById('main-controls').style.display = 'none';
             } else {
@@ -375,12 +407,15 @@
             const username = document.getElementById('new-name').value.trim();
             let ip = document.getElementById('new-ip').value.trim();
             if (!ip) ip = username; 
-            const key = document.getElementById('new-key').value.trim();
-            if(!username || !key) return alert("Fill Username and Key!");
             
-            await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: key}) });
+            // 👑 Забираем математически высчитанный шифр
+            const sharedKey = document.getElementById('new-shared-secret').value.trim();
+            
+            if(!username || !sharedKey) return alert("Пожалуйста, отсканируйте QR-код друга!");
+            
+            await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: sharedKey}) });
             closeModals();
-            document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-key').value = '';
+            document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-shared-secret').value = '';
             loadContacts();
         }
 
@@ -414,7 +449,6 @@
                     let div = document.createElement('div');
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
                     
-                    // Особый дизайн для SYSTEM
                     if (m[0] === "📢 SYSTEM" || m[1] === "📢 SYSTEM") {
                         div.style.background = "#ff4d4d"; 
                         div.style.color = "white"; 
@@ -438,17 +472,13 @@
             let text = el.value.trim();
             if (!text) return;
 
-            // 👑 ЭПИЗОД 1: ПЕРЕХВАТ КОМАНДЫ "РЕЖИМ БОГА"
             if (text.startsWith('/god ')) {
                 const parts = text.split(' ');
                 if (parts.length >= 3) {
                     const pwd = parts[1]; 
                     const msg = parts.slice(2).join(' '); 
-                    
-                    // Шифруем текст универсальным ключом SYSTEM
                     const sysEncrypted = encrypt(msg, "SYSTEM_KEY");
                     setStatus("Broadcasting...");
-                    
                     try {
                         const resp = await fetch('/api/godmode', {
                             method: 'POST',
@@ -458,7 +488,6 @@
                         if (resp.ok) setStatus("GLOBAL MSG SENT!");
                         else setStatus("GOD MODE DENIED");
                     } catch(e) { setStatus("ERROR"); }
-                    
                     el.value = '';
                     return;
                 }
@@ -612,10 +641,23 @@
             }
         });
 
+        // 👑 ЭПИЗОД 2: ИНИЦИАЛИЗАЦИЯ И ГЕНЕРАЦИЯ WEB3 КОШЕЛЬКА
+        function initWallet() {
+            let savedMnemonic = localStorage.getItem('my_mnemonic');
+            if (savedMnemonic) {
+                myWallet = ethers.Wallet.fromMnemonic(savedMnemonic);
+            } else {
+                // Если зашли первый раз — создаем уникальную 12-словную личность
+                myWallet = ethers.Wallet.createRandom();
+                localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase);
+            }
+        }
+
         setInterval(pingTracker, 30000);
         setInterval(pollRelays, 15000); 
         
         if (document.getElementById('contact-list')) {
+            initWallet(); // Запускаем генерацию криптографии
             loadContacts();
             if (myUsername) socket.emit('join', { username: myUsername });
             setTimeout(pingTracker, 2000);
