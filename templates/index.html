@@ -377,21 +377,35 @@
                     db.transaction("mediaCache", "readwrite").objectStore("mediaCache").delete(url);
                     base64Data = null; 
                 }
+
                 if (!base64Data) {
                     const response = await fetch(url, { headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }});
-                    if (!response.ok) throw new Error("File not found");
+                    if (!response.ok) throw new Error("Файл удален с сервера");
                     base64Data = await response.text(); 
-                    if (!base64Data.trim().startsWith("data:")) throw new Error("Network firewall blocked the file");
-                    await saveToCache(url, base64Data);
+                    
+                    // 🛠 ЗАЩИТА: Если видео слишком большое и кэш телефона переполнен - просто игнорируем ошибку кэша и показываем видео напрямую!
+                    try { 
+                        await saveToCache(url, base64Data); 
+                    } catch (cacheErr) { 
+                        console.warn("Кэш браузера переполнен, показываем напрямую."); 
+                    }
                 }
+
                 const el = document.getElementById(elementId);
                 if (el) {
                     el.onload = el.onloadedmetadata = () => {
                         const chat = document.getElementById('chat');
                         if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
                     };
+                    
+                    // Страховка на случай сбоя заголовков
+                    if (!base64Data.startsWith("data:")) {
+                        if (url.includes('video')) base64Data = "data:video/webm;base64," + base64Data;
+                        else if (url.includes('audio')) base64Data = "data:audio/webm;base64," + base64Data;
+                    }
                     el.src = base64Data; 
                 }
+                
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) {
                     dlBtn.href = base64Data;
@@ -401,8 +415,10 @@
                     else dlBtn.download = 'secure_photo.jpg';
                 }
             } catch (error) {
+                console.error("Media Error:", error);
                 const el = document.getElementById(elementId);
-                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа обрабатывается сетью]</small>";
+                // Если физически файла больше нет (сервер сгорел), честно пишем об этом
+                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа сгорело вместе со старым сервером 🔥]</small>";
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) dlBtn.remove();
             }
@@ -547,7 +563,7 @@
                 
                 for (let i = lastMessageCount; i < messages.length; i++) {
                     let m = messages[i];
-                    const isOut = (m[0] === 'Me');
+                    const isOut = (m[0] === 'Me' || m[0] === myUsername);
                     let text = decrypt(m[1], activeContact.key);
                     let content = text;
                     const mediaId = "m" + Math.random().toString(36).substr(2, 7);
