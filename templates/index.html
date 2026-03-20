@@ -462,42 +462,46 @@
             
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: sharedKey}) });
             
-            // 🦅 ЭПИЗОД 4: ПРОТОКОЛ ФЕНИКС - ПРОСИМ ДРУГА СКИНУТЬ ИСТОРИЮ
+            // 🦅 ПРОТОКОЛ ФЕНИКС - ПРОСИМ ДРУГА СКИНУТЬ ИСТОРИЮ
             try {
-                setStatus("Phoenix: Requesting chat backup...");
-                // Создаем крипто-подпись "RESTORE_CHAT" своим приватным ключом
-                const signature = await myWallet.signMessage("RESTORE_CHAT");
+                setStatus("Phoenix: Requesting chat backup...", true);
                 
-                // Делаем запрос к серверу друга с нашей подписью
-                const resp = await fetch(`https://${ip}/api/messages?chat_with=${encodeURIComponent(myUsername)}&secret=${encodeURIComponent(sharedKey)}`);
+                // Умное определение протокола (если тестируем по IP - будет http, иначе https)
+                const scheme = (ip.match(/^[0-9\.]+(:[0-9]+)?$/) || ip.includes('localhost')) ? 'http' : 'https';
+                
+                const resp = await fetch(`${scheme}://${ip}/api/messages?chat_with=${encodeURIComponent(myUsername)}&secret=${encodeURIComponent(sharedKey)}`);
                 
                 if (resp.ok) {
                     const friendMessages = await resp.json();
                     if (friendMessages && friendMessages.length > 0) {
-                        // Инвертируем отправителей (то, что у него "Me", у нас - его Имя)
                         const restoredData = friendMessages.map(m => {
                             const isFromHim = (m[0] === 'Me');
                             const sender = isFromHim ? username : myUsername;
                             return [username, sender, m[1], m[2]]; 
                         });
                         
-                        // Заливаем восстановленный чат на наш пустой локальный сервер
                         await fetch('/api/messages/save_synced', { 
                             method: 'POST', 
                             headers: {'Content-Type': 'application/json'}, 
                             body: JSON.stringify({messages: restoredData}) 
                         });
-                        setStatus("PHOENIX: CHAT RESTORED!");
+                        setStatus("PHOENIX: CHAT RESTORED!", false);
+                    } else {
+                        setStatus("SYSTEM READY", false);
                     }
+                } else {
+                    setStatus("SYSTEM READY", false);
                 }
             } catch(e) {
-                console.log("Phoenix auth/fetch error. (Friend's server might restrict unauthenticated access yet).");
+                console.log("Phoenix fetch error:", e);
+                setStatus("SYSTEM READY", false); // Снимаем зависание интерфейса
             }
 
             closeModals();
             document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-shared-secret').value = '';
             loadContacts();
         }
+
 
         async function loadMessages() {
             if (!activeContact || isUpdatingMessages) return;

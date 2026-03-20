@@ -5,6 +5,7 @@ from pywebpush import webpush, WebPushException
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
+# ⚡ БИБЛИОТЕКА WEBSOCKETS
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
@@ -13,6 +14,9 @@ app.secret_key = 'HIFI_STABLE_V10'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# ==========================================
+# НАСТРОЙКИ ПАПОК
+# ==========================================
 UPLOAD_FOLDER = 'uploads'
 DB_DIR = 'db_data'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -168,14 +172,11 @@ def api_godmode():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # 👑 ИСПРАВЛЕНИЕ: Собираем уникальные домены и со своего сервера, и с серверов друзей!
+    # Собираем уникальные домены и со своего сервера, и с серверов друзей!
     urls = set()
-    
-    # 1. Берем локальных пользователей
     c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
     for row in c.fetchall(): urls.add(row[0])
         
-    # 2. Берем внешние серверы из списка контактов
     c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != ''")
     for row in c.fetchall(): urls.add(row[0])
         
@@ -285,7 +286,20 @@ def get_messages():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Если мы сидим в браузере с паролем 123 (Обычный режим)
+    # 1. 🦅 ПРОТОКОЛ ФЕНИКС (запрос от друга на выкачивание базы)
+    if chat_with and secret:
+        # Проверяем математический шифр Диффи-Хеллмана
+        c.execute("SELECT name FROM contacts WHERE name = ? AND secret_key = ?", (chat_with, secret))
+        if c.fetchone():
+            c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
+            messages = c.fetchall()
+            conn.close()
+            return jsonify(messages)
+        else:
+            conn.close()
+            return jsonify([]) # Защита от хакеров
+
+    # 2. ОБЫЧНЫЙ РЕЖИМ (показ чата владельцу сервера)
     if session.get('auth'):
         if not chat_with: 
             conn.close()
@@ -294,17 +308,7 @@ def get_messages():
         messages = c.fetchall()
         conn.close()
         return jsonify(messages)
-
-    # 🦅 ПРОТОКОЛ ФЕНИКС: Если пришел пустой друг и просит свою историю
-    elif chat_with and secret:
-        # Проверяем, совпадает ли секретный шифр Диффи-Хеллмана
-        c.execute("SELECT name FROM contacts WHERE name = ? AND secret_key = ?", (chat_with, secret))
-        if c.fetchone():
-            c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
-            messages = c.fetchall()
-            conn.close()
-            return jsonify(messages)
-            
+        
     conn.close()
     return jsonify([])
 
@@ -332,7 +336,6 @@ def save_synced():
     conn.close()
     return "OK"
 
-# 👑 ЭПИЗОД 3: СЕРВЕР ПРИНИМАЕТ "ПРОШИВКУ" ОТ ТЕЛЕФОНА
 @app.route('/api/restore', methods=['POST'])
 def api_restore():
     if not session.get('auth'): return "No Auth", 403
