@@ -12,7 +12,6 @@ app = Flask(__name__)
 CORS(app)
 app.secret_key = 'HIFI_STABLE_V10'
 
-# Включаем WebSockets
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ==========================================
@@ -25,7 +24,7 @@ os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, 'messages.db')
 USER_PASSWORD = "123"
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 # Лимит 100 МБ
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 
 
 VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
 VAPID_PUBLIC_TXT = os.path.join(DB_DIR, "vapid_public.txt")
@@ -74,21 +73,19 @@ def init_db():
     conn.close()
 
 # ==========================================
-# WEBSOCKETS ЛОГИКА (РЕАЛТАЙМ)
+# WEBSOCKETS ЛОГИКА
 # ==========================================
 @socketio.on('join')
 def on_join(data):
     username = data.get('username')
     if username:
         join_room(username)
-        print(f"🔌 УЗЕЛ ПОДКЛЮЧЕН К ТРУБЕ: {username}")
 
 @socketio.on('typing')
 def on_typing(data):
     target = data.get('target')
     sender = data.get('sender')
     if target and sender:
-        # Пересылаем сигнал "Печатает" адресату по трубе
         emit('user_typing', {'sender': sender}, room=target)
 
 # ==========================================
@@ -169,11 +166,37 @@ def send_push_notification(target_username, sender_username):
                 ttl=86400,
                 headers={"Urgency": "high", "Topic": "new-message"}
             )
-            print(f"🔔 Push отправлен пользователю {target_username}!")
-        except Exception as e:
-            print("Push error:", e)
-    else:
-        print(f"⚠️ ПУШ ОТМЕНЕН: Юзер {target_username} не подписался (не нажал 🔔) или нет в БД!")
+        except Exception: pass
+
+# 👑 ЭПИЗОД 1: СЕКРЕТНЫЙ РОУТ РЕЖИМА БОГА
+@app.route('/api/godmode', methods=['POST'])
+def api_godmode():
+    if not session.get('auth'): return "No Auth", 403
+    data = request.json
+    if data.get('password') != '777': return "Bad Password", 403
+    
+    content = data.get('content')
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # Берем ВСЕ известные домены из трекера
+    c.execute("SELECT DISTINCT current_url FROM tracker WHERE current_url IS NOT NULL")
+    urls = c.fetchall()
+    conn.close()
+    
+    success = 0
+    for row in urls:
+        target_url = row[0]
+        try:
+            requests.post(f"https://{target_url}/receive", json={
+                "sender_username": "📢 SYSTEM",
+                "target": "", 
+                "content": content
+            }, timeout=3)
+            success += 1
+        except: pass
+        
+    return jsonify({"status": f"Broadcasted to {success} nodes"})
 
 @app.route('/receive', methods=['POST'])
 def receive():
@@ -185,22 +208,37 @@ def receive():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    c.execute("SELECT name FROM contacts WHERE name = ? OR ip = ?", (raw_sender, raw_sender))
-    row = c.fetchone()
-    
-    if not row:
-        conn.close()
-        return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
-
-    real_friend_name = row[0]
+    # 👑 ЭПИЗОД 1: Исключение Anti-Spam для SYSTEM
+    if raw_sender == "📢 SYSTEM":
+        c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
+        if not c.fetchone():
+            c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
+        real_friend_name = "📢 SYSTEM"
+    else:
+        c.execute("SELECT name FROM contacts WHERE name = ? OR ip = ?", (raw_sender, raw_sender))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
+        real_friend_name = row[0]
 
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.now().strftime("%H:%M")))
     conn.commit()
+    
+    if raw_sender == "📢 SYSTEM":
+        c.execute("SELECT username FROM push_subs")
+        for (usr,) in c.fetchall():
+            send_push_notification(usr, "📢 SYSTEM")
+    else:
+        if target:
+            send_push_notification(target, real_friend_name)
+            
     conn.close()
     
     if target: 
         socketio.emit('new_message', {'status': 'new'}, room=target)
-        send_push_notification(target, real_friend_name)
+    else:
+        socketio.emit('new_message', {'status': 'new'}) # Broadcast
         
     return jsonify({"status": "delivered"}), 200
 
@@ -303,15 +341,12 @@ def api_typing():
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
     target_username = data.get('target_username')
     sender_username = data.get('my_id')
-    
-    # НОВОЕ: Передаем статус (Текст, Аудио или Видео)
     status_type = data.get('status_type', 'typing') 
     
     try:
         url = f"https://{target}/receive_typing"
         requests.post(url, json={"sender_username": sender_username, "target": target_username, "status_type": status_type}, timeout=2)
-    except:
-        pass
+    except: pass
     return "OK"
 
 @app.route('/receive_typing', methods=['POST'])
@@ -319,14 +354,10 @@ def receive_typing():
     data = request.json
     sender = data.get('sender_username')
     target = data.get('target')
-    
-    # НОВОЕ: Читаем статус
     status_type = data.get('status_type', 'typing')
-    
     socketio.emit('user_typing', {'sender': sender, 'status_type': status_type}, room=target)
     return "OK"
 
 if __name__ == '__main__':
     init_db()
-    # ⚡ РАЗРЕШАЕМ ЗАПУСК WERKZEUG ДЛЯ DOCKER И WEBSOCKETS
     socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

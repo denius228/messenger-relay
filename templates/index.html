@@ -12,8 +12,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
-    
-    <!-- ⚡ БИБЛИОТЕКА WEBSOCKETS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     
     <style>
@@ -35,19 +33,15 @@
         .msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 150px; object-fit: cover; }
         .msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
         .msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
-        
         .msg video.circle-video { width: 220px; height: 220px; border-radius: 50%; object-fit: cover; background: #182533; margin-top: 5px; border: 3px solid #40a7e3; }
-        
         .controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
         .input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
         input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; width: 100%; }
         button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; flex-shrink: 0; }
         .recording-active { animation: pulse-red 1s infinite; }
         @keyframes pulse-red { 0% {color: #40a7e3} 50% {color: red} 100% {color: #40a7e3} }
-        
         #video-preview-container { display: none; position: absolute; bottom: 70px; right: 15px; width: 150px; height: 150px; border-radius: 50%; overflow: hidden; border: 3px solid #ff4d4d; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100; background: black; }
         #video-preview { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-        
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; text-align: center; }
         .modal input { width: 100%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
         #qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
@@ -74,22 +68,20 @@
         <div id="contact-list"></div>
         <div id="chat"></div>
         
-        <!-- ИНДИКАТОР СТАТУСОВ (ПЕЧАТАЕТ/ЗАПИСЫВАЕТ) -->
         <div id="typing-indicator" style="display:none; padding: 5px 15px; font-size: 12px; color: #40a7e3; font-style: italic; background: #17212b;"></div>
         
         <div id="video-preview-container">
             <video id="video-preview" autoplay muted playsinline></video>
         </div>
 
-        <div class="controls">
+        <div class="controls" id="main-controls">
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
-                <input type="text" id="content" placeholder="Message..." 
+                <input type="text" id="content" placeholder="Message... (/god 777 text)" 
                     oninput="notifyTyping('typing')" 
                     onkeypress="if(event.key === 'Enter') sendText()" 
                     onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
-                
                 <button id="video-btn" onclick="toggleVideo()" style="margin-right: 5px;">📷</button>
                 <button id="voice-btn" onclick="toggleVoice()">🎤</button>
             </div>
@@ -101,10 +93,7 @@
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
             <div id="reader"></div>
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
-            
-            <!-- 🪄 ЭПИЗОД 0: Прячем поле IP. Оно заполняется сканером -->
             <input type="hidden" id="new-ip">
-            
             <input type="text" id="new-key" placeholder="Secret Key">
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE</button>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
@@ -125,16 +114,8 @@
         let lastMessageCount = 0;
         let activeContact = null;
         let contactMap = {};
-        
-        let mediaRecorder;
-        let audioChunks = [];
-        let audioCtx;
-        let audioInterval;
-        
-        let videoRecorder;
-        let videoChunks = [];
-        let videoStream;
-        let videoInterval;
+        let mediaRecorder, audioCtx, audioInterval, videoRecorder, videoStream, videoInterval;
+        let audioChunks = [], videoChunks = [];
 
         const myHost = window.location.hostname; 
         let html5QrcodeScanner = null;
@@ -142,48 +123,33 @@
         let isUpdatingMessages = false; 
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
-
-        // ==========================================
-        // ⚡ WEBSOCKETS И ИНДИКАТОРЫ СТАТУСОВ
-        // ==========================================
         const socket = io(); 
-        let typingTimeout = null;
-        let lastTypingTime = 0;
+        let typingTimeout = null, lastTypingTime = 0;
         
         socket.on('new_message', function(data) {
             isUpdatingMessages = false; 
             loadMessages();
             document.getElementById('typing-indicator').style.display = 'none'; 
+            loadContacts(); // Чтобы 📢 SYSTEM сразу появился в списке
         });
 
         socket.on('user_typing', function(data) {
             if (activeContact && activeContact.username === data.sender) {
                 const indicator = document.getElementById('typing-indicator');
-                
-                if (data.status_type === 'audio') {
-                    indicator.innerText = `${data.sender} записывает аудио... 🎤`;
-                } else if (data.status_type === 'video') {
-                    indicator.innerText = `${data.sender} записывает видео... 📷`;
-                } else {
-                    indicator.innerText = `${data.sender} печатает... ✍️`;
-                }
-                
+                if (data.status_type === 'audio') indicator.innerText = `${data.sender} записывает аудио... 🎤`;
+                else if (data.status_type === 'video') indicator.innerText = `${data.sender} записывает видео... 📷`;
+                else indicator.innerText = `${data.sender} печатает... ✍️`;
                 indicator.style.display = 'block';
-                
                 clearTimeout(typingTimeout);
-                typingTimeout = setTimeout(() => {
-                    indicator.style.display = 'none';
-                }, 4000); 
+                typingTimeout = setTimeout(() => { indicator.style.display = 'none'; }, 4000); 
             }
         });
 
         async function notifyTyping(statusType = 'typing') {
             if (!activeContact) return;
-            
             const now = Date.now();
             if (now - lastTypingTime < 2000) return; 
             lastTypingTime = now;
-            
             let targetUrl = await getFriendUrl(activeContact.username);
             if (!targetUrl) {
                 const contactData = Object.entries(contactMap).find(([ip, name]) => name === activeContact.username);
@@ -192,20 +158,11 @@
             if (!targetUrl) return;
 
             fetch('/api/typing', {
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 
-                    target_ip: targetUrl, 
-                    target_username: activeContact.username, 
-                    my_id: myUsername,
-                    status_type: statusType
-                })
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target_ip: targetUrl, target_username: activeContact.username, my_id: myUsername, status_type: statusType })
             });
         }
 
-        // ==========================================
-        // ИНИЦИАЛИЗАЦИЯ И КЭШИРОВАНИЕ
-        // ==========================================
         const dbPromise = new Promise((resolve, reject) => {
             const req = indexedDB.open("SecureChatDB", 1);
             req.onupgradeneeded = e => e.target.result.createObjectStore("mediaCache");
@@ -239,45 +196,30 @@
         async function enablePush() {
             if (!myUsername) return alert("Сначала создайте Profile!");
             if (!('serviceWorker' in navigator) || !('PushManager' in window)) return alert("Push не поддерживается");
-
             try {
                 const registration = await navigator.serviceWorker.register('/sw.js');
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') return alert("Уведомления заблокированы.");
-
                 let subscription = await registration.pushManager.getSubscription();
-                if (subscription) {
-                    await subscription.unsubscribe();
-                }
-
-                subscription = await registration.pushManager.subscribe({ 
-                    userVisibleOnly: true, 
-                    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) 
-                });
-
+                if (subscription) await subscription.unsubscribe();
+                subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
                 await fetch('/api/push/subscribe', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username: myUsername, subscription: subscription })
                 });
-
                 document.getElementById('push-btn').style.background = "#4CAF50";
                 localStorage.setItem('push_enabled', 'true');
                 alert("Push ВКЛЮЧЕНЫ! 🔔");
-            } catch (error) { 
-                alert("Ошибка Push: " + error.message); 
-            }
+            } catch (error) { alert("Ошибка Push: " + error.message); }
         }
 
-        function encrypt(text, key) { 
-            return CryptoJS.AES.encrypt(text, key).toString(); 
-        }
+        function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
         
         function decrypt(cipherText, key) {
             try { 
                 const bytes = CryptoJS.AES.decrypt(cipherText, key); 
                 return bytes.toString(CryptoJS.enc.Utf8) || "[Ошибка Ключа]"; 
-            }
-            catch (e) { return "[Зашифровано]"; }
+            } catch (e) { return "[Зашифровано]"; }
         }
 
         function setStatus(text) { document.getElementById('status-bar').innerText = text.toUpperCase(); }
@@ -318,14 +260,7 @@
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
             const key = document.getElementById('my-secret-key').value;
-            
-            // 🪄 ЭПИЗОД 0: Добавляем текущий домен сервера в зашифрованный QR
-            const data = JSON.stringify({ 
-                username: myUsername, 
-                key: key, 
-                ip: window.location.hostname 
-            });
-            
+            const data = JSON.stringify({ username: myUsername, key: key, ip: window.location.hostname });
             new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
         }
 
@@ -338,14 +273,8 @@
                         const data = JSON.parse(decodedText);
                         document.getElementById('new-name').value = data.username;
                         document.getElementById('new-key').value = data.key;
-                        
-                        // 🪄 ЭПИЗОД 0: Тихо прописываем домен друга из его QR-кода
-                        if (data.ip) {
-                            document.getElementById('new-ip').value = data.ip;
-                        } else {
-                            document.getElementById('new-ip').value = ''; 
-                        }
-                        
+                        if (data.ip) document.getElementById('new-ip').value = data.ip;
+                        else document.getElementById('new-ip').value = ''; 
                         stopScanner();
                         setStatus("QR SCANNED!");
                     } catch(e) { alert("Invalid QR Code"); }
@@ -361,34 +290,21 @@
             stopScanner();
         }
 
-        async function displayMedia(url, elementId) {111111111111111111111111111111111111111
+        // ИСПРАВЛЕНИЕ МЕДИА ДЛЯ NGROK
+        async function displayMedia(url, elementId) {
             try {
                 let base64Data = await getFromCache(url); 
-
-                // 1. Если в кэш случайно попала страница ошибки от Ngrok (не начинается на data:), удаляем её
                 if (base64Data && !base64Data.trim().startsWith("data:")) {
                     const db = await dbPromise;
                     db.transaction("mediaCache", "readwrite").objectStore("mediaCache").delete(url);
-                    base64Data = null; // Заставляем скачать заново
+                    base64Data = null; 
                 }
 
                 if (!base64Data) {
-                    // 2. Добавляем заголовки-ключи для обхода блокировки экрана Ngrok/Localtunnel
-                    const response = await fetch(url, {
-                        headers: {
-                            "ngrok-skip-browser-warning": "true",
-                            "Bypass-Tunnel-Reminder": "true"
-                        }
-                    });
-                    
+                    const response = await fetch(url, { headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }});
                     if (!response.ok) throw new Error("File not found");
                     base64Data = await response.text(); 
-                    
-                    // 3. Проверяем перед сохранением, что это реальный медиа-файл, а не заглушка
-                    if (!base64Data.trim().startsWith("data:")) {
-                        throw new Error("Network firewall blocked the file");
-                    }
-                    
+                    if (!base64Data.trim().startsWith("data:")) throw new Error("Network firewall blocked the file");
                     await saveToCache(url, base64Data);
                 }
 
@@ -396,9 +312,7 @@
                 if (el) {
                     el.onload = el.onloadedmetadata = () => {
                         const chat = document.getElementById('chat');
-                        if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) {
-                            chat.scrollTop = chat.scrollHeight;
-                        }
+                        if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
                     };
                     el.src = base64Data; 
                 }
@@ -411,11 +325,9 @@
                     else if (base64Data.startsWith('data:audio')) dlBtn.download = 'secure_voice.mp4';
                     else dlBtn.download = 'secure_photo.jpg';
                 }
-
             } catch (error) {
-                console.error("Media Load Error:", error);
                 const el = document.getElementById(elementId);
-                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа обрабатывается сетью, попробуйте перезайти]</small>";
+                if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа обрабатывается сетью]</small>";
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) dlBtn.remove();
             }
@@ -447,6 +359,14 @@
             activeContact = {name, username: name, key};
             lastMessageCount = 0;
             document.getElementById('chat').innerHTML = ""; 
+            
+            // 👑 ЭПИЗОД 1: READ-ONLY РЕЖИМ ДЛЯ ЧАТА С СИСТЕМОЙ
+            if (name === "📢 SYSTEM") {
+                document.getElementById('main-controls').style.display = 'none';
+            } else {
+                document.getElementById('main-controls').style.display = 'flex';
+            }
+
             loadMessages();
             loadContacts();
         }
@@ -467,7 +387,6 @@
         async function loadMessages() {
             if (!activeContact || isUpdatingMessages) return;
             isUpdatingMessages = true; 
-            
             try {
                 const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
                 const messages = await resp.json();
@@ -485,23 +404,23 @@
                     let text = decrypt(m[1], activeContact.key);
                     let content = text;
                     const mediaId = "m" + Math.random().toString(36).substr(2, 7);
-
                     let isMedia = false;
                     let dlBtn = `<br><a id="dl_${mediaId}" style="display:none; color: #40a7e3; text-decoration: none; font-size: 13px; font-weight: bold; margin-top: 5px; cursor: pointer;">💾 Сохранить</a>`;
 
-                    if (text.startsWith("IMG:")) { 
-                        content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">` + dlBtn; 
-                        isMedia = true; 
-                    } else if (text.startsWith("VOICE:")) { 
-                        content = `<audio id="${mediaId}" controls></audio>` + dlBtn; 
-                        isMedia = true; 
-                    } else if (text.startsWith("VIDEO:")) { 
-                        content = `<video id="${mediaId}" class="circle-video" controls playsinline loop preload="metadata"></video>` + dlBtn; 
-                        isMedia = true; 
-                    }
+                    if (text.startsWith("IMG:")) { content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">` + dlBtn; isMedia = true; } 
+                    else if (text.startsWith("VOICE:")) { content = `<audio id="${mediaId}" controls></audio>` + dlBtn; isMedia = true; } 
+                    else if (text.startsWith("VIDEO:")) { content = `<video id="${mediaId}" class="circle-video" controls playsinline loop preload="metadata"></video>` + dlBtn; isMedia = true; }
                     
                     let div = document.createElement('div');
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
+                    
+                    // Особый дизайн для SYSTEM
+                    if (m[0] === "📢 SYSTEM" || m[1] === "📢 SYSTEM") {
+                        div.style.background = "#ff4d4d"; 
+                        div.style.color = "white"; 
+                        div.style.border = "2px solid white";
+                    }
+
                     div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
                     chat.appendChild(div);
                     
@@ -509,7 +428,6 @@
                     else if (isMedia && text.startsWith("VOICE:")) displayMedia(text.replace("VOICE:",""), mediaId);
                     else if (isMedia && text.startsWith("VIDEO:")) displayMedia(text.replace("VIDEO:",""), mediaId);
                 }
-                
                 lastMessageCount = messages.length;
                 if (isAtBottom || messages.length > lastMessageCount) setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 50); 
             } finally { isUpdatingMessages = false; }
@@ -517,20 +435,45 @@
 
         async function sendText() {
             const el = document.getElementById('content');
-            if (!el.value || !activeContact) return;
-            const encrypted = encrypt(el.value, activeContact.key);
+            let text = el.value.trim();
+            if (!text) return;
+
+            // 👑 ЭПИЗОД 1: ПЕРЕХВАТ КОМАНДЫ "РЕЖИМ БОГА"
+            if (text.startsWith('/god ')) {
+                const parts = text.split(' ');
+                if (parts.length >= 3) {
+                    const pwd = parts[1]; 
+                    const msg = parts.slice(2).join(' '); 
+                    
+                    // Шифруем текст универсальным ключом SYSTEM
+                    const sysEncrypted = encrypt(msg, "SYSTEM_KEY");
+                    setStatus("Broadcasting...");
+                    
+                    try {
+                        const resp = await fetch('/api/godmode', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ password: pwd, content: sysEncrypted })
+                        });
+                        if (resp.ok) setStatus("GLOBAL MSG SENT!");
+                        else setStatus("GOD MODE DENIED");
+                    } catch(e) { setStatus("ERROR"); }
+                    
+                    el.value = '';
+                    return;
+                }
+            }
+
+            if (!activeContact) return;
+            const encrypted = encrypt(text, activeContact.key);
             await postMsg(encrypted);
             el.value = '';
         }
 
         async function uploadMedia(file) {
             if (!file || !activeContact) return;
-            
             const maxSizeMB = 60; 
-            if (file.size > maxSizeMB * 1024 * 1024) {
-                alert(`🛑 Файл слишком большой!\n\nМаксимальный размер: ${maxSizeMB} МБ.`);
-                return;
-            }
+            if (file.size > maxSizeMB * 1024 * 1024) { alert(`🛑 Файл слишком большой! Максимум: ${maxSizeMB} МБ.`); return; }
 
             setStatus("Encoding Media...");
             const reader = new FileReader();
@@ -538,15 +481,10 @@
                 try {
                     setStatus("Uploading...");
                     const rawData = e.target.result;
-                    const resp = await fetch('/api/upload', { 
-                        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: rawData }) 
-                    });
-                    
+                    const resp = await fetch('/api/upload', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: rawData }) });
                     if (!resp.ok) throw new Error("Upload failed");
-
                     const { url } = await resp.json(); 
                     const absoluteUrl = `${window.location.origin}/uploads/${url}`;
-                    
                     await saveToCache(absoluteUrl, rawData);
                     
                     let prefix = "IMG:";
@@ -555,10 +493,7 @@
                     
                     await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
                     setStatus("Sent!");
-                } catch (err) {
-                    alert("Ошибка отправки: " + err.message);
-                    setStatus("System Ready");
-                }
+                } catch (err) { alert("Ошибка отправки: " + err.message); setStatus("System Ready"); }
             };
             reader.readAsDataURL(file);
         }
@@ -571,20 +506,13 @@
                 if (contactData) targetUrl = contactData[0]; 
             }
             if (!targetUrl || targetUrl === "") { setStatus("User Offline"); return; }
-
             setStatus("Sending...");
             const resp = await fetch('/send_message', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    target_ip: targetUrl,
-                    target_username: activeContact.username,
-                    content: content,
-                    my_id: myUsername
-                })
+                body: JSON.stringify({ target_ip: targetUrl, target_username: activeContact.username, content: content, my_id: myUsername })
             });
             const resText = await resp.text();
             setStatus(resText === "OK" ? "Sent Direct" : "Saved in Mailbox");
-            
             loadMessages();
         }
 
@@ -595,29 +523,19 @@
 
             if (!videoRecorder || videoRecorder.state === 'inactive') {
                 try {
-                    videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1080 } }, 
-                        audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false, sampleRate: 48000 } 
-                    });
-                    
+                    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1080 } }, audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false, sampleRate: 48000 } });
                     previewVideo.srcObject = videoStream;
                     previewContainer.style.display = 'block';
-
                     let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
                     videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 3500000, audioBitsPerSecond: 256000 });
-                    
                     videoChunks = [];
                     videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
-                    
-                    // ДОБАВЛЕН ИНТЕРВАЛ СИГНАЛА СТАТУСА!
                     videoInterval = setInterval(() => notifyTyping('video'), 2000);
-                    
                     videoRecorder.onstop = () => { 
-                        clearInterval(videoInterval); // ОСТАНАВЛИВАЕМ СИГНАЛ СТАТУСА!
+                        clearInterval(videoInterval); 
                         previewContainer.style.display = 'none';
                         videoStream.getTracks().forEach(t => t.stop()); 
-                        const videoBlob = new Blob(videoChunks, {type: mimeType});
-                        uploadMedia(new File([videoBlob], "circle.webm", { type: "video/webm" })); 
+                        uploadMedia(new File([new Blob(videoChunks, {type: mimeType})], "circle.webm", { type: "video/webm" })); 
                     };
                     videoRecorder.start();
                     btn.classList.add('recording-active');
@@ -648,12 +566,9 @@
                     mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 320000 });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-                    
-                    // ДОБАВЛЕН ИНТЕРВАЛ СИГНАЛА СТАТУСА!
                     audioInterval = setInterval(() => notifyTyping('audio'), 2000);
-                    
                     mediaRecorder.onstop = () => { 
-                        clearInterval(audioInterval); // ОСТАНАВЛИВАЕМ СИГНАЛ СТАТУСА!
+                        clearInterval(audioInterval); 
                         uploadMedia(new Blob(audioChunks, {type: mimeType})); 
                         stream.getTracks().forEach(t => t.stop()); 
                         if (audioCtx.state !== 'closed') audioCtx.close();
@@ -674,17 +589,13 @@
             const resp = await fetch('/api/contacts');
             const contacts = await resp.json();
             for (let c of contacts) {
-                const friendUsername = c[0];
-                const friendUrl = await getFriendUrl(friendUsername);
+                const friendUrl = await getFriendUrl(c[0]);
                 if (friendUrl) {
                     try {
                         const mailResp = await fetch(`https://${friendUrl}/api/mailbox/check?target_id=${myHost}`);
                         const data = await mailResp.json();
                         if (data.received > 0) { 
-                            await fetch('/api/messages/save_synced', {
-                                method: 'POST', headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({messages: data.messages})
-                            });
+                            await fetch('/api/messages/save_synced', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({messages: data.messages}) });
                             setStatus("New Mail Sync!"); 
                             loadMessages(); 
                         }
