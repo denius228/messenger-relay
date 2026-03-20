@@ -81,7 +81,6 @@
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
-                <!-- 👑 Убрал палево из строки ввода -->
                 <input type="text" id="content" placeholder="Message..." 
                     oninput="notifyTyping('typing')" 
                     onkeypress="if(event.key === 'Enter') sendText()" 
@@ -99,7 +98,7 @@
             <input type="text" id="new-name" placeholder="Friend's Username (e.g. @alice)">
             <input type="hidden" id="new-ip">
             
-            <!-- 👑 ЭПИЗОД 2: Поле с ручным ключом заменено на скрытое, куда скрипт запишет результат смешивания (Диффи-Хеллман) -->
+            <!-- 👑 ЭПИЗОД 2: Скрытое поле для идеального шифра -->
             <input type="hidden" id="new-shared-secret">
             
             <button onclick="addContact()" style="background:#40a7e3; color:white; padding:12px; border-radius:12px; width:100%; font-size:16px; border:none; font-weight:bold;">SAVE CONTACT</button>
@@ -110,7 +109,6 @@
             <h3>Web3 Identity</h3>
             <input type="text" id="my-username" placeholder="My Username (e.g. @bob)">
             
-            <!-- 👑 ЭПИЗОД 2: Вывод Seed-фразы -->
             <div style="background:#182533; padding:12px; border-radius:10px; margin-bottom:15px; text-align:left; border: 1px solid #2b5278;">
                 <span style="font-size:10px; color:#7f91a4; text-transform:uppercase;">SECRET SEED PHRASE (SAVE THIS):</span><br>
                 <b id="my-seed-phrase" style="color:#40a7e3; font-size:14px; line-height:1.5;">Generating...</b>
@@ -259,7 +257,6 @@
             document.getElementById('profile-modal').style.display = 'block';
             document.getElementById('my-username').value = myUsername;
             
-            // 👑 ЭПИЗОД 2: Показываем сгенерированные 12 слов
             if (myWallet) {
                 document.getElementById('my-seed-phrase').innerText = myWallet.mnemonic.phrase;
             }
@@ -276,8 +273,15 @@
             alert("Web3 Profile Saved!");
         }
 
-        let isProcessingQR = false;
+        function generateQR() {
+            if (!myWallet) return;
+            document.getElementById('qr-code').innerHTML = "";
+            const compressedPub = ethers.utils.computePublicKey(myWallet.publicKey, true);
+            const data = JSON.stringify({ username: myUsername, pub: compressedPub, ip: window.location.hostname });
+            new QRCode(document.getElementById("qr-code"), { text: data, width: 220, height: 220, colorDark: "#000", colorLight: "#fff" });
+        }
 
+        let isProcessingQR = false;
         function startScanner() {
             if(html5QrcodeScanner) return;
             isProcessingQR = false; 
@@ -293,15 +297,10 @@
                         document.getElementById('new-name').value = data.username || "";
                         document.getElementById('new-ip').value = data.ip || "";
                         
-                        // 👑 ИСПРАВЛЕННАЯ МАТЕМАТИКА (ДИФФИ-ХЕЛЛМАН)
                         if (data.pub) {
                             if (!myWallet) throw new Error("Крипто-кошелек еще не загружен!");
-                            
-                            // Правильный вызов через крипто-модуль SigningKey
                             const signingKey = new ethers.utils.SigningKey(myWallet.privateKey);
                             const sharedSecret = signingKey.computeSharedSecret(data.pub);
-                            
-                            // Сохраняем идеальный 64-значный шифр (убираем приставку 0x)
                             document.getElementById('new-shared-secret').value = sharedSecret.replace('0x', '');
                             setStatus("KEYS MIXED SECURELY!");
                         } else if (data.key) {
@@ -413,9 +412,7 @@
             let ip = document.getElementById('new-ip').value.trim();
             if (!ip) ip = username; 
             
-            // 👑 Забираем математически высчитанный шифр
             const sharedKey = document.getElementById('new-shared-secret').value.trim();
-            
             if(!username || !sharedKey) return alert("Пожалуйста, отсканируйте QR-код друга!");
             
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: sharedKey}) });
@@ -646,13 +643,12 @@
             }
         });
 
-        // 👑 ЭПИЗОД 2: ИНИЦИАЛИЗАЦИЯ И ГЕНЕРАЦИЯ WEB3 КОШЕЛЬКА
+        // 👑 ИНИЦИАЛИЗАЦИЯ И ГЕНЕРАЦИЯ WEB3 КОШЕЛЬКА
         function initWallet() {
             let savedMnemonic = localStorage.getItem('my_mnemonic');
             if (savedMnemonic) {
                 myWallet = ethers.Wallet.fromMnemonic(savedMnemonic);
             } else {
-                // Если зашли первый раз — создаем уникальную 12-словную личность
                 myWallet = ethers.Wallet.createRandom();
                 localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase);
             }
@@ -662,7 +658,7 @@
         setInterval(pollRelays, 15000); 
         
         if (document.getElementById('contact-list')) {
-            initWallet(); // Запускаем генерацию криптографии
+            initWallet(); 
             loadContacts();
             if (myUsername) socket.emit('join', { username: myUsername });
             setTimeout(pingTracker, 2000);
