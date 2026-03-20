@@ -276,16 +276,31 @@
 
         // 🦅 ЭПИЗОД 4: ФУНКЦИЯ ИМПОРТА СТАРОЙ ЛИЧНОСТИ
         function importWallet() {
+            // 1. Обязательно забираем логин
+            const uname = document.getElementById('my-username').value.trim();
+            if (!uname) return alert("Сначала введите ваш старый никнейм в поле 'My Username' наверху!");
+            
             const seed = document.getElementById('import-seed-input').value.trim();
             if (seed.split(' ').length !== 12) return alert("Фраза должна состоять ровно из 12 слов!");
             
             try {
+                // Восстанавливаем математику
                 myWallet = ethers.Wallet.fromMnemonic(seed);
+                
+                // 2. ЖЕСТКО сохраняем логин и фразу в память
+                myUsername = uname;
+                localStorage.setItem('my_username', myUsername);
                 localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase);
+                
                 document.getElementById('my-seed-phrase').value = myWallet.mnemonic.phrase;
                 document.getElementById('import-seed-div').style.display = 'none';
+                
+                // Перегенерируем QR и сообщаем серверу, кто мы
                 generateQR();
-                alert("Личность успешно восстановлена! Теперь добавьте (отсканируйте) своего друга, чтобы выкачать историю чата с его сервера.");
+                pingTracker();
+                socket.emit('join', { username: myUsername });
+                
+                alert("Личность и Логин успешно восстановлены! 🔥\nТеперь отсканируйте друга.");
             } catch (e) {
                 alert("Неверная Seed-фраза!");
             }
