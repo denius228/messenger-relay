@@ -279,15 +279,34 @@ def manage_contacts():
 
 @app.route('/api/messages')
 def get_messages():
-    if not session.get('auth'): return jsonify([])
     chat_with = request.args.get('chat_with')
-    if not chat_with: return jsonify([])
+    secret = request.args.get('secret') # Ключ для восстановления Феникс
+    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
-    messages = c.fetchall()
+
+    # Если мы сидим в браузере с паролем 123 (Обычный режим)
+    if session.get('auth'):
+        if not chat_with: 
+            conn.close()
+            return jsonify([])
+        c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
+        messages = c.fetchall()
+        conn.close()
+        return jsonify(messages)
+
+    # 🦅 ПРОТОКОЛ ФЕНИКС: Если пришел пустой друг и просит свою историю
+    elif chat_with and secret:
+        # Проверяем, совпадает ли секретный шифр Диффи-Хеллмана
+        c.execute("SELECT name FROM contacts WHERE name = ? AND secret_key = ?", (chat_with, secret))
+        if c.fetchone():
+            c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
+            messages = c.fetchall()
+            conn.close()
+            return jsonify(messages)
+            
     conn.close()
-    return jsonify(messages)
+    return jsonify([])
 
 @app.route('/api/mailbox/check')
 def check_mailbox():

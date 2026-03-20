@@ -469,7 +469,7 @@
                 const signature = await myWallet.signMessage("RESTORE_CHAT");
                 
                 // Делаем запрос к серверу друга с нашей подписью
-                const resp = await fetch(`https://${ip}/api/messages?chat_with=${encodeURIComponent(myUsername)}&sig=${signature}&pub=${myWallet.publicKey}`);
+                const resp = await fetch(`https://${ip}/api/messages?chat_with=${encodeURIComponent(myUsername)}&secret=${encodeURIComponent(sharedKey)}`);
                 
                 if (resp.ok) {
                     const friendMessages = await resp.json();
