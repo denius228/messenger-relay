@@ -107,11 +107,9 @@
             
             <div style="background:#182533; padding:12px; border-radius:10px; margin-bottom:15px; text-align:left; border: 1px solid #2b5278;">
                 <span style="font-size:10px; color:#7f91a4; text-transform:uppercase;">SECRET SEED PHRASE (SAVE THIS):</span><br>
-                <!-- 🦅 ЭПИЗОД 4: Сделали фразу копируемой через textarea -->
                 <textarea id="my-seed-phrase" style="width:100%; background:none; border:none; color:#40a7e3; font-size:14px; line-height:1.5; font-weight:bold; resize:none;" rows="3" readonly></textarea>
             </div>
             
-            <!-- 🦅 ЭПИЗОД 4: Кнопка восстановления Личности -->
             <div id="restore-identity-section" style="margin-bottom: 15px;">
                 <button onclick="document.getElementById('import-seed-div').style.display='block'; this.style.display='none';" style="background:none; border:1px solid #40a7e3; color:#40a7e3; padding:8px; border-radius:10px; width:100%; font-size:12px; cursor:pointer;">♻️ УЖЕ ЕСТЬ ФРАЗА? ВОССТАНОВИТЬ</button>
                 <div id="import-seed-div" style="display:none; margin-top:10px;">
@@ -274,9 +272,8 @@
             if (myUsername) generateQR();
         }
 
-        // 🦅 ЭПИЗОД 4: ФУНКЦИЯ ИМПОРТА СТАРОЙ ЛИЧНОСТИ
+        // 🦅 ЭПИЗОД 4: ФУНКЦИЯ ИМПОРТА СТАРОЙ ЛИЧНОСТИ (ИСПРАВЛЕННАЯ)
         function importWallet() {
-            // 1. Обязательно забираем логин
             const uname = document.getElementById('my-username').value.trim();
             if (!uname) return alert("Сначала введите ваш старый никнейм в поле 'My Username' наверху!");
             
@@ -284,10 +281,7 @@
             if (seed.split(' ').length !== 12) return alert("Фраза должна состоять ровно из 12 слов!");
             
             try {
-                // Восстанавливаем математику
                 myWallet = ethers.Wallet.fromMnemonic(seed);
-                
-                // 2. ЖЕСТКО сохраняем логин и фразу в память
                 myUsername = uname;
                 localStorage.setItem('my_username', myUsername);
                 localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase);
@@ -295,7 +289,6 @@
                 document.getElementById('my-seed-phrase').value = myWallet.mnemonic.phrase;
                 document.getElementById('import-seed-div').style.display = 'none';
                 
-                // Перегенерируем QR и сообщаем серверу, кто мы
                 generateQR();
                 pingTracker();
                 socket.emit('join', { username: myUsername });
@@ -467,7 +460,11 @@
             loadContacts();
         }
 
+        // 🦅 ЭПИЗОД 4: ПРОТОКОЛ ФЕНИКС - ИСПРАВЛЕННОЕ ВОССТАНОВЛЕНИЕ ИЗ БЭКАПА ДРУГА
         async function addContact() {
+            const currentMyUsername = localStorage.getItem('my_username') || myUsername;
+            if (!currentMyUsername) return alert("Сначала сохраните свой профиль!");
+
             const username = document.getElementById('new-name').value.trim();
             let ip = document.getElementById('new-ip').value.trim();
             if (!ip) ip = username; 
@@ -477,28 +474,25 @@
             
             await fetch('/api/contacts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: username, ip: ip, key: sharedKey}) });
             
-            // 🦅 ПРОТОКОЛ ФЕНИКС - ПРОСИМ ДРУГА СКИНУТЬ ИСТОРИЮ
             try {
                 setStatus("Phoenix: Requesting chat backup...", true);
-                
-                // Умное определение протокола (если тестируем по IP - будет http, иначе https)
                 const scheme = (ip.match(/^[0-9\.]+(:[0-9]+)?$/) || ip.includes('localhost')) ? 'http' : 'https';
                 
-                const resp = await fetch(`${scheme}://${ip}/api/messages?chat_with=${encodeURIComponent(myUsername)}&secret=${encodeURIComponent(sharedKey)}`);
+                const resp = await fetch(`${scheme}://${ip}/api/messages?chat_with=${encodeURIComponent(currentMyUsername)}&secret=${encodeURIComponent(sharedKey)}`);
                 
                 if (resp.ok) {
                     const friendMessages = await resp.json();
                     if (friendMessages && friendMessages.length > 0) {
                         const restoredData = friendMessages.map(m => {
                             const isFromHim = (m[0] === 'Me');
-                            const sender = isFromHim ? username : myUsername;
+                            const sender = isFromHim ? username : currentMyUsername;
                             return [username, sender, m[1], m[2]]; 
                         });
                         
-                        await fetch('/api/restore', {  
+                        await fetch('/api/restore', { 
                             method: 'POST', 
                             headers: {'Content-Type': 'application/json'}, 
-                            body: JSON.stringify({ contacts: [], messages: restoredData })  
+                            body: JSON.stringify({ contacts: [], messages: restoredData }) 
                         });
                         setStatus("PHOENIX: CHAT RESTORED!", false);
                     } else {
@@ -509,14 +503,13 @@
                 }
             } catch(e) {
                 console.log("Phoenix fetch error:", e);
-                setStatus("SYSTEM READY", false); // Снимаем зависание интерфейса
+                setStatus("SYSTEM READY", false);
             }
 
             closeModals();
             document.getElementById('new-name').value = ''; document.getElementById('new-ip').value = ''; document.getElementById('new-shared-secret').value = '';
             loadContacts();
         }
-
 
         async function loadMessages() {
             if (!activeContact || isUpdatingMessages) return;
