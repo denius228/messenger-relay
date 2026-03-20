@@ -480,10 +480,10 @@
                             return [username, sender, m[1], m[2]]; 
                         });
                         
-                        await fetch('/api/messages/save_synced', { 
+                        await fetch('/api/restore', {  
                             method: 'POST', 
                             headers: {'Content-Type': 'application/json'}, 
-                            body: JSON.stringify({messages: restoredData}) 
+                            body: JSON.stringify({ contacts: [], messages: restoredData })  
                         });
                         setStatus("PHOENIX: CHAT RESTORED!", false);
                     } else {
