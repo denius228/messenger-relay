@@ -164,18 +164,34 @@ def api_godmode():
     data = request.json
     if data.get('password') != '777': return "Bad Password", 403
     content = data.get('content')
+    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT DISTINCT current_url FROM tracker WHERE current_url IS NOT NULL")
-    urls = c.fetchall()
+    
+    # 👑 ИСПРАВЛЕНИЕ: Собираем уникальные домены и со своего сервера, и с серверов друзей!
+    urls = set()
+    
+    # 1. Берем локальных пользователей
+    c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
+    for row in c.fetchall(): urls.add(row[0])
+        
+    # 2. Берем внешние серверы из списка контактов
+    c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != ''")
+    for row in c.fetchall(): urls.add(row[0])
+        
     conn.close()
+    
     success = 0
-    for row in urls:
-        target_url = row[0]
+    for target_url in urls:
         try:
-            requests.post(f"https://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, timeout=3)
+            requests.post(f"https://{target_url}/receive", json={
+                "sender_username": "📢 SYSTEM", 
+                "target": "", 
+                "content": content
+            }, timeout=3)
             success += 1
         except: pass
+        
     return jsonify({"status": f"Broadcasted to {success} nodes"})
 
 @app.route('/receive', methods=['POST'])
