@@ -235,12 +235,26 @@
             } catch (error) { alert("Ошибка Push: " + error.message); }
         }
 
-        function encrypt(text, key) { return CryptoJS.AES.encrypt(text, key).toString(); }
+        function encrypt(text, key) { 
+                    // Всегда очищаем ключ перед шифрованием, чтобы новые смс были идеальными
+                    const cleanKey = key.replace(/^0x/, '');
+                    return CryptoJS.AES.encrypt(text, cleanKey).toString(); 
+               }
         
         function decrypt(cipherText, key) {
+            const cleanKey = key.replace(/^0x/, '');
             try { 
-                const bytes = CryptoJS.AES.decrypt(cipherText, key); 
-                return bytes.toString(CryptoJS.enc.Utf8) || "[Ошибка Ключа]"; 
+                // 1. Пробуем расшифровать правильным чистым ключом
+                let bytes = CryptoJS.AES.decrypt(cipherText, cleanKey); 
+                let text = bytes.toString(CryptoJS.enc.Utf8);
+                if (text) return text;
+                
+                // 2. СПАСАТЕЛЬНЫЙ КРУГ: Если это старое сообщение от старой версии кода
+                bytes = CryptoJS.AES.decrypt(cipherText, '0x' + cleanKey);
+                text = bytes.toString(CryptoJS.enc.Utf8);
+                if (text) return text;
+                
+                return "[Ошибка Ключа]\n" + cipherText; 
             } catch (e) { return "[Зашифровано]"; }
         }
 
