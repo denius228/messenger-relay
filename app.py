@@ -172,7 +172,6 @@ def api_godmode():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Собираем уникальные домены и со своего сервера, и с серверов друзей!
     urls = set()
     c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
     for row in c.fetchall(): urls.add(row[0])
@@ -185,11 +184,11 @@ def api_godmode():
     success = 0
     for target_url in urls:
         try:
-            requests.post(f"https://{target_url}/receive", json={
-                "sender_username": "📢 SYSTEM", 
-                "target": "", 
-                "content": content
-            }, timeout=3)
+            # 🛠 УМНАЯ РАССЫЛКА: Пробуем HTTPS, если отказ (тестовый IP) - бьем через HTTP
+            try:
+                requests.post(f"https://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, timeout=3)
+            except:
+                requests.post(f"http://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, timeout=3)
             success += 1
         except: pass
         
