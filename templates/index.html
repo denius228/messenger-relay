@@ -278,19 +278,31 @@
 
         function generateQR() {
             document.getElementById('qr-code').innerHTML = "";
-            // 👑 ЭПИЗОД 2: Теперь зашиваем в QR Публичный Ключ вместо старого пароля
+            
+            // 👑 УМНОЕ СЖАТИЕ: Укорачиваем публичный ключ со 130 до 66 символов, чтобы QR-код был проще
+            const compressedPub = ethers.utils.computePublicKey(myWallet.publicKey, true);
+            
             const data = JSON.stringify({ 
                 username: myUsername, 
-                pub: myWallet.publicKey, 
+                pub: compressedPub, 
                 ip: window.location.hostname 
             });
-            new QRCode(document.getElementById("qr-code"), { text: data, width: 150, height: 150, colorDark: "#000", colorLight: "#fff" });
+            
+            // Увеличили размер квадрата с 150x150 до 220x220
+            new QRCode(document.getElementById("qr-code"), { 
+                text: data, 
+                width: 220, 
+                height: 220, 
+                colorDark: "#000", 
+                colorLight: "#fff" 
+            });
         }
 
-        function startScanner() {
+        function startScanner() {1111111111111111
             if(html5QrcodeScanner) return;
             html5QrcodeScanner = new Html5Qrcode("reader");
-            html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 200, height: 200 } },
+            // Увеличили qrbox до 250x250 для уверенного захвата
+            html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 15, qrbox: { width: 250, height: 250 } },
                 (decodedText) => {
                     try {
                         const data = JSON.parse(decodedText);
@@ -298,14 +310,12 @@
                         if (data.ip) document.getElementById('new-ip').value = data.ip;
                         else document.getElementById('new-ip').value = ''; 
                         
-                        // 👑 ЭПИЗОД 2: ВЕЛИКАЯ МАТЕМАТИКА (ДИФФИ-ХЕЛЛМАН)
+                        // 👑 МАТЕМАТИКА (ДИФФИ-ХЕЛЛМАН)
                         if (data.pub) {
-                            // Смешиваем НАШ Приватный ключ с ИХ Публичным ключом = Идеальный шифр 64 байта
                             const sharedSecret = ethers.utils.computeSharedSecret(myWallet.privateKey, data.pub);
                             document.getElementById('new-shared-secret').value = sharedSecret;
                             setStatus("KEYS MIXED SECURELY!");
                         } else {
-                            // Резервный вариант, если друг еще не обновился и у него старый QR
                             document.getElementById('new-shared-secret').value = data.key || "";
                             setStatus("QR SCANNED (OLD VERSION)");
                         }
