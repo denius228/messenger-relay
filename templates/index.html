@@ -802,12 +802,18 @@
             const resp = await fetch('/api/contacts');
             const contacts = await resp.json();
             for (let c of contacts) {
+                // Ищем актуальный адрес друга в Трекере
                 const friendUrl = await getFriendUrl(c[0]);
                 if (friendUrl) {
                     try {
-                        const mailResp = await fetch(`https://${friendUrl}/api/mailbox/check?target_id=${myHost}`);
+                        // 🌟 ИСПРАВЛЕНИЕ: Умный выбор HTTP/HTTPS для локальных тестов
+                        const scheme = (friendUrl.match(/^[0-9\.]+(:[0-9]+)?$/) || friendUrl.includes('localhost')) ? 'http' : 'https';
+                        
+                        const mailResp = await fetch(`${scheme}://${friendUrl}/api/mailbox/check?target_id=${myHost}`);
                         const data = await mailResp.json();
+                        
                         if (data.received > 0) { 
+                            // Сохраняем полученные из Mailbox сообщения в свою базу
                             await fetch('/api/messages/save_synced', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({messages: data.messages}) });
                             setStatus("New Mail Sync!"); 
                             loadMessages(); 
