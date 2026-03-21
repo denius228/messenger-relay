@@ -94,7 +94,6 @@ def index():
 @app.route('/uploads/<path:filename>')
 def download_file(filename): return send_from_directory(UPLOAD_FOLDER, filename)
 
-# 🔄 ЭТАП 1: Оптимизированная и защищенная загрузка медиа (Бинарный поток FormData)
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     if not session.get('auth'): 
@@ -171,7 +170,6 @@ def send_push_notification(target_username, sender_username):
             )
         except Exception: pass
 
-# 🔄 ЭТАП 2: Асинхронный и защищенный Режим Бога (Gossip Protocol)
 @app.route('/api/godmode', methods=['POST'])
 def api_godmode():
     if not session.get('auth'): return "No Auth", 403
@@ -182,13 +180,12 @@ def api_godmode():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # 🌟 1. СОХРАНЯЕМ СРАЗУ СЕБЕ ЛОКАЛЬНО
+    # Сразу сохраняем локально, чтобы ты увидел сообщение без задержек
     c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
     if not c.fetchone():
         c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", ("📢 SYSTEM", "📢 SYSTEM", content, datetime.datetime.now().strftime("%H:%M")))
     
-    # 2. СОБИРАЕМ АДРЕСА ДЛЯ РАССЫЛКИ ДРУГИМ
     urls = set()
     c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
     for row in c.fetchall(): urls.add(row[0])
@@ -197,10 +194,9 @@ def api_godmode():
     conn.commit()
     conn.close()
     
-    # 🌟 3. ПИНАЕМ ВСЕ СВОИ ВКЛАДКИ (и телефон, и ПК обновят экраны)
+    # Обновляем все открытые вкладки (твой ПК и телефон)
     socketio.emit('new_message', {'status': 'new'})
     
-    # 4. РАССЫЛАЕМ ОСТАЛЬНЫМ В ФОНЕ
     def broadcast_to_all(target_urls, msg_text):
         for target_url in target_urls:
             try:
@@ -218,18 +214,24 @@ def receive():
     raw_sender = data.get('sender_username') or data.get('sender', '').split(':')[0]
     target = data.get('target')
     content = data.get('content')
+    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
+    # 🌟 ЗАЩИТА ОТ ПЕТЛИ (АНТИ-ДУБЛИКАТ): 
+    # Если ты тестируешь 2 устройства на 1 сервере, мы игнорируем "эхо" от самого себя
+    c.execute("SELECT 1 FROM msgs WHERE content = ?", (content,))
+    if c.fetchone():
+        conn.close()
+        return jsonify({"status": "local_loopback_ignored"}), 200
+
     is_new_system_msg = False
     
     if raw_sender == "📢 SYSTEM":
-        # Проверяем токен! Защита от подделок
         if data.get('sys_token') != SYSTEM_BROADCAST_TOKEN:
             conn.close()
             return jsonify({"error": "Security Breach: Invalid System Token"}), 403
 
-        # 🦠 АНТИ-ШТОРМ: Проверка на дубликат вирусного сообщения
         c.execute("SELECT 1 FROM msgs WHERE chat_with = '📢 SYSTEM' AND content = ?", (content,))
         if c.fetchone():
             conn.close()
@@ -255,7 +257,6 @@ def receive():
         c.execute("SELECT username FROM push_subs")
         for (usr,) in c.fetchall(): send_push_notification(usr, "📢 SYSTEM")
         
-        # 🦠 GOSSIP PROTOCOL: Пересылаем дальше друзьям асинхронно
         if is_new_system_msg:
             c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != '' AND name != '📢 SYSTEM'")
             friends = c.fetchall()
@@ -276,7 +277,6 @@ def receive():
     else: socketio.emit('new_message', {'status': 'new'})
     return jsonify({"status": "delivered"}), 200
 
-# 🔄 ЭТАП 2: Ускоренная отправка + Фолбэк на HTTP для локального тестирования
 @app.route('/send_message', methods=['POST'])
 def send():
     if not session.get('auth'): return "No Auth", 403
@@ -293,7 +293,6 @@ def send():
     conn.close()
     
     try:
-        # Пробуем HTTPS
         url_https = f"https://{target}/receive"
         payload = {"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}
         try:
@@ -301,13 +300,11 @@ def send():
             if resp.status_code == 200: return "OK"
             raise Exception("HTTPS Failed")
         except:
-            # Фолбэк на HTTP (важно для localhost тестирования!)
             url_http = f"http://{target}/receive"
             resp = requests.post(url_http, json=payload, headers=REQ_HEADERS, timeout=3)
             if resp.status_code == 200: return "OK"
             raise Exception("HTTP Failed")
     except:
-        # Сохраняем в Mailbox только если оба протокола не ответили
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_username, content, datetime.datetime.now().strftime("%H:%M")))
@@ -405,7 +402,6 @@ def api_restore():
     conn.close()
     return jsonify({"status": "restored"})
 
-# 🔄 ЭТАП 2: Асинхронный Тайпинг (Не тормозит UI)
 @app.route('/api/typing', methods=['POST'])
 def api_typing():
     data = request.json
