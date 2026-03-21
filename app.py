@@ -342,7 +342,8 @@ def get_messages():
     if chat_with and secret:
         c.execute("SELECT name FROM contacts WHERE name = ? AND secret_key = ?", (chat_with, secret))
         if c.fetchone():
-            c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
+            # 🌟 ИЗМЕНЕНИЕ: Сортируем по скрытому rowid (порядку добавления), а не по строке времени!
+            c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY rowid ASC", (chat_with,))
             messages = c.fetchall()
             conn.close()
             return jsonify(messages)
@@ -354,7 +355,8 @@ def get_messages():
         if not chat_with: 
             conn.close()
             return jsonify([])
-        c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY timestamp ASC", (chat_with,))
+        # 🌟 ИЗМЕНЕНИЕ: Сортируем по скрытому rowid
+        c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY rowid ASC", (chat_with,))
         messages = c.fetchall()
         conn.close()
         return jsonify(messages)
