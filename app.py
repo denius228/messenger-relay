@@ -8,7 +8,13 @@ from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
 CORS(app)
+
+# 🔒 Безопасное хранение паролей (можно задавать через переменные окружения)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'HIFI_STABLE_V10')
+USER_PASSWORD = os.getenv('CHAT_PASSWORD', '123')
+
+# 🛡 Токен защиты от подделки системных сообщений хакерами
+SYSTEM_BROADCAST_TOKEN = "SUPER_SECRET_GOD_TOKEN_999"
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -25,7 +31,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, 'messages.db')
-USER_PASSWORD = os.getenv('CHAT_PASSWORD', '123')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 
 
 VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
@@ -79,12 +84,6 @@ def on_join(data):
     username = data.get('username')
     if username: join_room(username)
 
-@socketio.on('typing')
-def on_typing(data):
-    target = data.get('target')
-    sender = data.get('sender')
-    if target and sender: emit('user_typing', {'sender': sender}, room=target)
-
 @app.route('/sw.js')
 def serve_sw(): return app.send_static_file('sw.js')
 
@@ -95,13 +94,12 @@ def index():
 @app.route('/uploads/<path:filename>')
 def download_file(filename): return send_from_directory(UPLOAD_FOLDER, filename)
 
+# 🔄 ЭТАП 1: Оптимизированная и защищенная загрузка медиа (Бинарный поток FormData)
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    # 🔒 Защита от спамеров и исчерпания диска
     if not session.get('auth'): 
         return jsonify({"error": "Unauthorized"}), 403
     
-    # 📦 Проверка наличия файла в запросе
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
         
@@ -109,13 +107,9 @@ def upload_file():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
-    # Генерируем уникальное имя файла
     filename = str(uuid.uuid4()) + ".enc"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-    
-    # Сохраняем файл бинарным потоком напрямую на диск (ОЗУ не переполняется)
     file.save(filepath)
-    
     return jsonify({"url": filename})
 
 @app.route('/login', methods=['POST'])
@@ -177,8 +171,7 @@ def send_push_notification(target_username, sender_username):
             )
         except Exception: pass
 
-SYSTEM_BROADCAST_TOKEN = "SUPER_SECRET_GOD_TOKEN_999"
-
+# 🔄 ЭТАП 2: Асинхронный и защищенный Режим Бога (Gossip Protocol)
 @app.route('/api/godmode', methods=['POST'])
 def api_godmode():
     if not session.get('auth'): return "No Auth", 403
@@ -195,7 +188,6 @@ def api_godmode():
     for row in c.fetchall(): urls.add(row[0])
     conn.close()
     
-    # Функция для асинхронной рассылки
     def broadcast_to_all(target_urls, msg_text):
         for target_url in target_urls:
             try:
@@ -204,9 +196,7 @@ def api_godmode():
                 except: requests.post(f"http://{target_url}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
             except: pass
 
-    # Запускаем вирусную рассылку в фоне! Сервер админа больше не зависает.
     threading.Thread(target=broadcast_to_all, args=(urls, content), daemon=True).start()
-    
     return jsonify({"status": "Broadcast started in background"})
 
 @app.route('/receive', methods=['POST'])
@@ -221,7 +211,7 @@ def receive():
     is_new_system_msg = False
     
     if raw_sender == "📢 SYSTEM":
-        # Проверяем токен! Если его нет или он неверный — это атака хакера.
+        # Проверяем токен! Защита от подделок
         if data.get('sys_token') != SYSTEM_BROADCAST_TOKEN:
             conn.close()
             return jsonify({"error": "Security Breach: Invalid System Token"}), 403
@@ -252,7 +242,7 @@ def receive():
         c.execute("SELECT username FROM push_subs")
         for (usr,) in c.fetchall(): send_push_notification(usr, "📢 SYSTEM")
         
-        # 🦠 GOSSIP PROTOCOL (ВИРУС): Пересылаем дальше друзьям (с обходом Cloudflare)
+        # 🦠 GOSSIP PROTOCOL: Пересылаем дальше друзьям асинхронно
         if is_new_system_msg:
             c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != '' AND name != '📢 SYSTEM'")
             friends = c.fetchall()
@@ -273,6 +263,7 @@ def receive():
     else: socketio.emit('new_message', {'status': 'new'})
     return jsonify({"status": "delivered"}), 200
 
+# 🔄 ЭТАП 2: Ускоренная отправка + Фолбэк на HTTP для локального тестирования
 @app.route('/send_message', methods=['POST'])
 def send():
     if not session.get('auth'): return "No Auth", 403
@@ -282,7 +273,6 @@ def send():
     content = data.get('content')
     my_username = data.get('my_id') 
     
-    # Сразу сохраняем у себя
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target_username, "Me", content, datetime.datetime.now().strftime("%H:%M")))
@@ -290,14 +280,21 @@ def send():
     conn.close()
     
     try:
-        url = f"https://{target}/receive"
-        # Уменьшили таймаут до 3 секунд. Если за 3 сек друг не принял — он оффлайн.
-        resp = requests.post(url, json={"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}, headers=REQ_HEADERS, timeout=3)
-        if resp.status_code == 200: 
-            return "OK"
-        raise Exception("Bad status")
+        # Пробуем HTTPS
+        url_https = f"https://{target}/receive"
+        payload = {"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}
+        try:
+            resp = requests.post(url_https, json=payload, headers=REQ_HEADERS, timeout=3)
+            if resp.status_code == 200: return "OK"
+            raise Exception("HTTPS Failed")
+        except:
+            # Фолбэк на HTTP (важно для localhost тестирования!)
+            url_http = f"http://{target}/receive"
+            resp = requests.post(url_http, json=payload, headers=REQ_HEADERS, timeout=3)
+            if resp.status_code == 200: return "OK"
+            raise Exception("HTTP Failed")
     except:
-        # Падаем в Mailbox мгновенно, не замораживая UI надолго
+        # Сохраняем в Mailbox только если оба протокола не ответили
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_username, content, datetime.datetime.now().strftime("%H:%M")))
@@ -395,6 +392,7 @@ def api_restore():
     conn.close()
     return jsonify({"status": "restored"})
 
+# 🔄 ЭТАП 2: Асинхронный Тайпинг (Не тормозит UI)
 @app.route('/api/typing', methods=['POST'])
 def api_typing():
     data = request.json
@@ -402,12 +400,11 @@ def api_typing():
     
     def send_typing():
         try:
-            requests.post(f"https://{target}/receive_typing", 
-                          json={"sender_username": data.get('my_id'), "target": data.get('target_username'), "status_type": data.get('status_type', 'typing')}, 
-                          headers=REQ_HEADERS, timeout=2)
+            payload = {"sender_username": data.get('my_id'), "target": data.get('target_username'), "status_type": data.get('status_type', 'typing')}
+            try: requests.post(f"https://{target}/receive_typing", json=payload, headers=REQ_HEADERS, timeout=2)
+            except: requests.post(f"http://{target}/receive_typing", json=payload, headers=REQ_HEADERS, timeout=2)
         except: pass
 
-    # Отправляем запрос в фоне, а серверу сразу отдаем "ОК", не заставляя UI ждать
     threading.Thread(target=send_typing, daemon=True).start()
     return "OK"
 
