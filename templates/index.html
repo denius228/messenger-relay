@@ -48,6 +48,11 @@
         .modal input { width: 100%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
         #qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
         #reader { width: 100%; margin-bottom: 15px; border-radius: 10px; overflow: hidden; }
+        
+        /* Стили для нового Экрана Блокировки / Установки */
+        #web3-auth-modal { position:fixed; top:0; left:0; width:100%; height:100%; background:#0e1621; z-index:9999; display:none; flex-direction:column; align-items:center; justify-content:center; padding:20px; text-align:center; }
+        .auth-input { width:100%; max-width:300px; padding:15px; margin-bottom:15px; border-radius:10px; border:1px solid #40a7e3; background:#242f3d; color:white; text-align:center; font-size:16px; box-sizing:border-box; }
+        .btn-primary { background:#40a7e3; color:white; border:none; padding:15px; border-radius:10px; font-weight:bold; cursor:pointer; width:100%; max-width:300px; font-size:16px; margin-bottom:10px; }
     </style>
 </head>
 <body>
@@ -60,6 +65,9 @@
             </form>
         </div>
     {% else %}
+        <!-- 🌟 НОВЫЙ ЭКРАН БЛОКИРОВКИ И ШИФРОВАНИЯ WEB3 -->
+        <div id="web3-auth-modal"></div>
+
         <div class="header">
             <button class="btn-small" onclick="showProfile()">PROFILE</button>
             <span>E2EE CHAT ⚡</span> 
@@ -101,28 +109,21 @@
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; margin-top:10px; background:none; border:none;">CANCEL</button>
         </div>
 
+        <!-- 🌟 ОБНОВЛЕННЫЙ ПРОФИЛЬ: БОЛЬШЕ НЕТ ОТКРЫТОЙ ФРАЗЫ -->
         <div id="profile-modal" class="modal">
             <h3>Web3 Identity</h3>
-            <input type="text" id="my-username" placeholder="My Username (e.g. @bob)">
-            
-            <div style="background:#182533; padding:12px; border-radius:10px; margin-bottom:15px; text-align:left; border: 1px solid #2b5278;">
-                <span style="font-size:10px; color:#7f91a4; text-transform:uppercase;">SECRET SEED PHRASE (SAVE THIS):</span><br>
-                <textarea id="my-seed-phrase" style="width:100%; background:none; border:none; color:#40a7e3; font-size:14px; line-height:1.5; font-weight:bold; resize:none;" rows="3" readonly></textarea>
-            </div>
-            
-            <div id="restore-identity-section" style="margin-bottom: 15px;">
-                <button onclick="document.getElementById('import-seed-div').style.display='block'; this.style.display='none';" style="background:none; border:1px solid #40a7e3; color:#40a7e3; padding:8px; border-radius:10px; width:100%; font-size:12px; cursor:pointer;">♻️ УЖЕ ЕСТЬ ФРАЗА? ВОССТАНОВИТЬ</button>
-                <div id="import-seed-div" style="display:none; margin-top:10px;">
-                    <input type="text" id="import-seed-input" placeholder="Введите 12 слов через пробел..." style="font-size:12px;">
-                    <button onclick="importWallet()" style="background:#ff9800; color:white; padding:8px; border-radius:10px; width:100%; font-size:12px; border:none; font-weight:bold;">🔥 ЗАГРУЗИТЬ ЛИЧНОСТЬ</button>
-                </div>
-            </div>
-            
-            <p style="font-size:11px; color:#ff4d4d; font-weight:bold; margin-bottom:5px;">⚠️ ДЛЯ СОЗДАНИЯ НЕУЯЗВИМОГО E2EE КАНАЛА ВЫ ОБА ДОЛЖНЫ ОТСКАНИРОВАТЬ QR ДРУГ ДРУГА!</p>
+            <input type="text" id="my-username" readonly style="background:none; border:none; color:#40a7e3; text-align:center; font-weight:bold; font-size:18px; outline:none;">
             
             <div id="qr-code"></div>
-            <button onclick="saveMyProfile()" style="background:#40a7e3; color:white; padding:10px; border-radius:10px; width:100%; font-size:14px; border:none; font-weight:bold; margin-bottom:10px;">SAVE PROFILE & UPDATE QR</button>
-            <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; background:none; border:none;">CLOSE</button>
+
+            <div style="margin-top:15px; border-top:1px solid #333; padding-top:15px;">
+                <p style="font-size:11px; color:#7f91a4;">Фраза зашифрована. Введите локальный PIN-код для просмотра.</p>
+                <input type="password" id="profile-pin" placeholder="Введите PIN-код" style="font-size:14px; margin-bottom:10px; text-align:center;">
+                <button onclick="revealSeedInProfile()" style="background:#ff9800; color:white; padding:10px; border-radius:10px; width:100%; font-size:12px; border:none; font-weight:bold;">👁️ ПОКАЗАТЬ ФРАЗУ НА 10 СЕК</button>
+                <div id="revealed-seed" style="display:none; margin-top:10px; color:#ff4d4d; font-weight:bold; font-size:14px; background:#182533; padding:15px; border-radius:10px; line-height:1.5;"></div>
+            </div>
+            
+            <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; background:none; border:none; margin-top:15px;">ЗАКРЫТЬ</button>
         </div>
     {% endif %}
 
@@ -138,6 +139,7 @@
         let myUsername = localStorage.getItem('my_username') || "";
         let isUpdatingMessages = false; 
         let myWallet = null;
+        let isAppUnlocked = false; // Блокировка интервалов, пока не введен PIN
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
         const socket = io(); 
@@ -184,7 +186,6 @@
             const req = indexedDB.open("SecureChatDB", 2);
             req.onupgradeneeded = e => {
                 const db = e.target.result;
-                // Кэш медиа убран для файлов (чтобы не переполнять ОЗУ), но оставляем для совместимости базы
                 if (!db.objectStoreNames.contains("mediaCache")) db.createObjectStore("mediaCache");
                 if (!db.objectStoreNames.contains("contacts")) db.createObjectStore("contacts", { keyPath: "name" });
                 if (!db.objectStoreNames.contains("chats")) db.createObjectStore("chats"); 
@@ -250,7 +251,7 @@
         }
 
         async function pingTracker() {
-            if (!myUsername) return;
+            if (!myUsername || !isAppUnlocked) return;
             try { await fetch(`/api/tracker/update`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: myUsername, url: myHost }) }); } catch(e) {}
         }
 
@@ -266,45 +267,168 @@
         function showProfile() {
             document.getElementById('profile-modal').style.display = 'block';
             document.getElementById('my-username').value = myUsername;
-            if (myWallet) document.getElementById('my-seed-phrase').value = myWallet.mnemonic.phrase;
+            document.getElementById('profile-pin').value = '';
+            document.getElementById('revealed-seed').style.display = 'none';
             if (myUsername) generateQR();
         }
 
-        function importWallet() {
-            const uname = document.getElementById('my-username').value.trim();
-            if (!uname) return alert("Сначала введите ваш старый никнейм в поле 'My Username' наверху!");
-            
-            const seed = document.getElementById('import-seed-input').value.trim();
-            if (seed.split(' ').length !== 12) return alert("Фраза должна состоять ровно из 12 слов!");
-            
-            try {
-                myWallet = ethers.Wallet.fromMnemonic(seed);
-                myUsername = uname;
-                localStorage.setItem('my_username', myUsername);
-                localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase);
-                
-                document.getElementById('my-seed-phrase').value = myWallet.mnemonic.phrase;
-                document.getElementById('import-seed-div').style.display = 'none';
-                
-                generateQR();
-                pingTracker();
-                socket.emit('join', { username: myUsername });
-                
-                alert("Личность и Логин успешно восстановлены! 🔥\nТеперь отсканируйте друга.");
-            } catch (e) {
-                alert("Неверная Seed-фраза!");
+        // 🌟 ЭТАП 3: Логика защиты Seed-фразы (PIN-коды и Шифрование)
+        function checkWeb3Identity() {
+            const plainMnemonic = localStorage.getItem('my_mnemonic');
+            const encSeed = localStorage.getItem('enc_seed');
+            const overlay = document.getElementById('web3-auth-modal');
+
+            if (plainMnemonic && !encSeed) {
+                // МИГРАЦИЯ: Пользователь из старой версии кода, прячем его фразу
+                overlay.style.display = 'flex';
+                overlay.innerHTML = `
+                    <h2 style="color:#40a7e3;">🛡️ Защита Личности</h2>
+                    <p style="font-size:14px; color:#7f91a4;">Мы добавили локальное шифрование.<br>Придумайте PIN-код для защиты вашей Seed-фразы на этом устройстве.</p>
+                    <input type="password" id="setup-pin" class="auth-input" placeholder="Новый PIN-код (от 4 цифр)">
+                    <button onclick="migrateWallet()" class="btn-primary">Зашифровать</button>
+                `;
+            } else if (encSeed) {
+                // БЛОКИРОВКА: Пользователь возвращается, просим пароль
+                overlay.style.display = 'flex';
+                overlay.innerHTML = `
+                    <h2 style="color:#40a7e3;">🔒 Вход в E2EE</h2>
+                    <p style="font-size:14px; color:#7f91a4;">Введите ваш локальный PIN-код</p>
+                    <input type="password" id="unlock-pin" class="auth-input" placeholder="PIN-код">
+                    <button onclick="unlockWallet()" class="btn-primary">Разблокировать</button>
+                `;
+            } else {
+                // НОВЫЙ ПОЛЬЗОВАТЕЛЬ: Создание
+                showSetupScreen();
             }
         }
 
-        function saveMyProfile() {
-            myUsername = document.getElementById('my-username').value.trim();
-            if(!myUsername) return alert("Fill username!");
-            localStorage.setItem('my_username', myUsername);
-            generateQR();
-            pingTracker();
-            socket.emit('join', { username: myUsername });
-            alert("Web3 Profile Saved!");
+        function showSetupScreen() {
+            const overlay = document.getElementById('web3-auth-modal');
+            overlay.style.display = 'flex';
+            overlay.innerHTML = `
+                <h2 style="color:#40a7e3;">⚡ Web3 Личность</h2>
+                <p style="font-size:12px; color:#7f91a4; margin-bottom:20px;">Генерация математических E2EE ключей</p>
+                <input type="text" id="setup-username" class="auth-input" placeholder="Ваш Никнейм (@name)">
+                <input type="password" id="setup-pin" class="auth-input" placeholder="Придумайте PIN-код (от 4 цифр)">
+                <button onclick="generateNewWallet()" class="btn-primary">Создать профиль</button>
+                <button onclick="showImportScreen()" style="background:none; border:none; color:#40a7e3; text-decoration:underline; cursor:pointer;">Импортировать старый (12 слов)</button>
+            `;
         }
+
+        function showImportScreen() {
+            const overlay = document.getElementById('web3-auth-modal');
+            overlay.innerHTML = `
+                <h2 style="color:#ff9800;">♻️ Восстановление</h2>
+                <input type="text" id="import-uname" class="auth-input" placeholder="Ваш старый Никнейм">
+                <textarea id="import-words" class="auth-input" placeholder="Введите 12 слов через пробел" style="height:80px; resize:none; font-size:14px;"></textarea>
+                <input type="password" id="import-pin" class="auth-input" placeholder="Придумайте новый PIN-код">
+                <button onclick="processImport()" class="btn-primary" style="background:#ff9800;">Восстановить</button>
+                <button onclick="showSetupScreen()" style="background:none; border:none; color:gray; text-decoration:underline; cursor:pointer;">Назад</button>
+            `;
+        }
+
+        function migrateWallet() {
+            const pin = document.getElementById('setup-pin').value;
+            if(pin.length < 4) return alert("PIN должен быть от 4 символов!");
+            const plain = localStorage.getItem('my_mnemonic');
+            const enc = CryptoJS.AES.encrypt(plain, pin).toString();
+            localStorage.setItem('enc_seed', enc);
+            localStorage.removeItem('my_mnemonic'); // Удаляем открытый текст навсегда!
+            startApp(plain);
+        }
+
+        function unlockWallet() {
+            const pin = document.getElementById('unlock-pin').value;
+            try {
+                const bytes = CryptoJS.AES.decrypt(localStorage.getItem('enc_seed'), pin);
+                const plain = bytes.toString(CryptoJS.enc.Utf8);
+                if(plain.split(' ').length === 12) {
+                    startApp(plain);
+                } else {
+                    alert("❌ Неверный PIN-код!");
+                }
+            } catch(e) { alert("❌ Неверный PIN-код!"); }
+        }
+
+        function generateNewWallet() {
+            const pin = document.getElementById('setup-pin').value;
+            const uname = document.getElementById('setup-username').value.trim();
+            if(pin.length < 4 || !uname) return alert("Заполните Никнейм и PIN (мин. 4 символа)!");
+            
+            const wallet = ethers.Wallet.createRandom();
+            const plain = wallet.mnemonic.phrase;
+            
+            localStorage.setItem('enc_seed', CryptoJS.AES.encrypt(plain, pin).toString());
+            localStorage.setItem('my_username', uname);
+            
+            // Показываем секретные слова ТОЛЬКО 1 РАЗ!
+            const overlay = document.getElementById('web3-auth-modal');
+            overlay.innerHTML = `
+                <h2 style="color:#ff4d4d;">⚠️ ВАЖНО!</h2>
+                <p style="color:#7f91a4; font-size:12px; max-width:300px; text-align:center;">Запишите эти 12 слов на бумагу. Они показаны первый и последний раз. Это единственный способ восстановить ваш аккаунт при потере устройства.</p>
+                <div style="background:#182533; padding:20px; border-radius:10px; margin-bottom:20px; border:1px solid #ff4d4d; max-width:300px; color:white; font-weight:bold; text-align:center; font-size:16px; line-height:1.6;">
+                    ${plain}
+                </div>
+                <button onclick="startApp('${plain}')" class="btn-primary" style="background:#ff4d4d;">Я записал(а) слова в надежное место</button>
+            `;
+        }
+
+        function processImport() {
+            const uname = document.getElementById('import-uname').value.trim();
+            const seed = document.getElementById('import-words').value.trim();
+            const pin = document.getElementById('import-pin').value;
+            
+            if (!uname || pin.length < 4 || seed.split(' ').length !== 12) return alert("Проверьте Никнейм, 12 слов и PIN-код!");
+            
+            try {
+                ethers.Wallet.fromMnemonic(seed); // Проверяем на валидность математикой
+                localStorage.setItem('enc_seed', CryptoJS.AES.encrypt(seed, pin).toString());
+                localStorage.setItem('my_username', uname);
+                alert("Личность успешно восстановлена! 🔥");
+                startApp(seed);
+            } catch (e) {
+                alert("❌ Ошибка: Неверная Seed-фраза!");
+            }
+        }
+
+        function revealSeedInProfile() {
+            const pin = document.getElementById('profile-pin').value;
+            try {
+                const bytes = CryptoJS.AES.decrypt(localStorage.getItem('enc_seed'), pin);
+                const plain = bytes.toString(CryptoJS.enc.Utf8);
+                if(plain.split(' ').length === 12) {
+                    const display = document.getElementById('revealed-seed');
+                    display.innerText = plain;
+                    display.style.display = 'block';
+                    document.getElementById('profile-pin').value = '';
+                    
+                    // Магия: скрываем слова сами через 10 секунд!
+                    setTimeout(() => {
+                        display.style.display = 'none';
+                        display.innerText = '';
+                    }, 10000);
+                } else { alert("❌ Неверный PIN-код!"); }
+            } catch(e) { alert("❌ Неверный PIN-код!"); }
+        }
+
+        // Запуск основного интерфейса чата после разблокировки
+        function startApp(plainMnemonic) {
+            myWallet = ethers.Wallet.fromMnemonic(plainMnemonic);
+            myUsername = localStorage.getItem('my_username');
+            isAppUnlocked = true;
+            document.getElementById('web3-auth-modal').style.display = 'none';
+            
+            loadContacts();
+            if (myUsername) {
+                socket.emit('join', { username: myUsername });
+                generateQR();
+                pingTracker();
+            }
+            if (localStorage.getItem('push_enabled') === 'true') {
+                document.getElementById('push-btn').style.background = "#4CAF50";
+            }
+        }
+        // 🌟 КОНЕЦ ЛОГИКИ WEB3 АВТОРИЗАЦИИ
 
         function generateQR() {
             if (!myWallet) return;
@@ -352,16 +476,12 @@
         function stopScanner() { if(html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); html5QrcodeScanner = null; }); } }
         function closeModals() { document.getElementById('add-modal').style.display = 'none'; document.getElementById('profile-modal').style.display = 'none'; stopScanner(); }
 
-        // ОБНОВЛЕНО: Используем Blob для отображения медиа (защита от нехватки памяти)
         async function displayMedia(url, elementId) {
             try {
                 const response = await fetch(url, { headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }});
                 if (!response.ok) throw new Error("Файл удален с сервера");
                 
-                // Получаем файл как бинарный Blob (не грузит процессор телефона Base64 строками)
                 const blob = await response.blob();
-                
-                // Создаем временную ссылку в памяти браузера
                 const objectUrl = URL.createObjectURL(blob);
 
                 const el = document.getElementById(elementId);
@@ -370,8 +490,6 @@
                         const chat = document.getElementById('chat');
                         if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
                     };
-                    
-                    // Вставляем ссылку напрямую
                     el.src = objectUrl; 
                 }
                 
@@ -459,8 +577,7 @@
         }
 
         async function addContact() {
-            const currentMyUsername = localStorage.getItem('my_username') || myUsername;
-            if (!currentMyUsername) return alert("Сначала сохраните свой профиль!");
+            if (!isAppUnlocked || !myWallet) return alert("Сначала разблокируйте профиль!");
 
             const username = document.getElementById('new-name').value.trim();
             let ip = document.getElementById('new-ip').value.trim();
@@ -475,14 +592,14 @@
                 setStatus("Phoenix: Requesting chat backup...", true);
                 const scheme = (ip.match(/^[0-9\.]+(:[0-9]+)?$/) || ip.includes('localhost')) ? 'http' : 'https';
                 
-                const resp = await fetch(`${scheme}://${ip}/api/messages?chat_with=${encodeURIComponent(currentMyUsername)}&secret=${encodeURIComponent(sharedKey)}`);
+                const resp = await fetch(`${scheme}://${ip}/api/messages?chat_with=${encodeURIComponent(myUsername)}&secret=${encodeURIComponent(sharedKey)}`);
                 
                 if (resp.ok) {
                     const friendMessages = await resp.json();
                     if (friendMessages && friendMessages.length > 0) {
                         const restoredData = friendMessages.map(m => {
                             const isFromHim = (m[0] === 'Me');
-                            const sender = isFromHim ? username : currentMyUsername;
+                            const sender = isFromHim ? username : myUsername;
                             return [username, sender, m[1], m[2]]; 
                         });
                         
@@ -499,7 +616,6 @@
                     setStatus("SYSTEM READY", false);
                 }
             } catch(e) {
-                console.log("Phoenix fetch error:", e);
                 setStatus("SYSTEM READY", false);
             }
 
@@ -509,7 +625,7 @@
         }
 
         async function loadMessages() {
-            if (!activeContact || isUpdatingMessages) return;
+            if (!activeContact || isUpdatingMessages || !isAppUnlocked) return;
             isUpdatingMessages = true; 
             try {
                 const resp = await fetch('/api/messages?chat_with=' + encodeURIComponent(activeContact.username));
@@ -560,9 +676,8 @@
         async function sendText() {
             const el = document.getElementById('content');
             let text = el.value.trim();
-            if (!text) return;
+            if (!text || !isAppUnlocked) return;
             
-            // --- РЕЖИМ БОГА ---
             if (text.startsWith('/god ')) {
                 const parts = text.split(' ');
                 if (parts.length >= 3) {
@@ -570,55 +685,36 @@
                     const msg = parts.slice(2).join(' '); 
                     const sysEncrypted = encrypt(msg, "SYSTEM_KEY");
                     setStatus("Broadcasting...");
-                    
                     try {
                         const resp = await fetch('/api/godmode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ password: pwd, content: sysEncrypted }) });
                         if (resp.ok) {
                             setStatus("GLOBAL MSG SENT!");
-                            
-                            // Железный переход в Системный Чат (задержка 300мс нужна, чтобы сервер 100% успел сохранить смс в БД)
-                            setTimeout(() => {
-                                selectContact('📢 SYSTEM', '127.0.0.1', 'SYSTEM_KEY');
-                                document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
-                            }, 300);
-                            
-                        } else {
-                            setStatus("GOD MODE DENIED");
-                        }
+                            setTimeout(() => { selectContact('📢 SYSTEM', '127.0.0.1', 'SYSTEM_KEY'); }, 300);
+                        } else { setStatus("GOD MODE DENIED"); }
                     } catch(e) { setStatus("ERROR"); }
                     el.value = '';
                     return;
                 }
             }
 
-            // --- ОБЫЧНОЕ СООБЩЕНИЕ ---
             if (!activeContact) return;
             const encrypted = encrypt(text, activeContact.key);
             await postMsg(encrypted);
             el.value = '';
         }
 
-        // ОБНОВЛЕНО: Используем FormData для отправки файлов кусками (без зависаний Base64)
         async function uploadMedia(file) {
-            if (!file || !activeContact) return;
-            const maxSizeMB = 100; // Поддержка файлов до 100 МБ
-            if (file.size > maxSizeMB * 1024 * 1024) { 
-                alert(`🛑 Файл слишком большой! Максимум: ${maxSizeMB} МБ.`); 
-                return; 
-            }
+            if (!file || !activeContact || !isAppUnlocked) return;
+            const maxSizeMB = 100;
+            if (file.size > maxSizeMB * 1024 * 1024) { alert(`🛑 Файл слишком большой! Максимум: ${maxSizeMB} МБ.`); return; }
             
             setStatus("Uploading...");
-
             const formData = new FormData();
             formData.append("file", file, file.name || "media.webm");
 
             try {
-                const resp = await fetch('/api/upload', { 
-                    method: 'POST', 
-                    body: formData 
-                });
-                
-                if (!resp.ok) throw new Error(resp.status === 403 ? "Не авторизован" : "Ошибка сервера");
+                const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (!resp.ok) throw new Error("Ошибка сервера");
                 
                 const { url } = await resp.json(); 
                 const absoluteUrl = `${window.location.origin}/uploads/${url}`;
@@ -629,10 +725,7 @@
                 
                 await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
                 setStatus("Sent!");
-            } catch (err) { 
-                alert("Ошибка отправки: " + err.message); 
-                setStatus("System Ready"); 
-            }
+            } catch (err) { alert("Ошибка отправки: " + err.message); setStatus("System Ready"); }
         }
 
         async function postMsg(content) {
@@ -657,11 +750,11 @@
 
             if (!videoRecorder || videoRecorder.state === 'inactive') {
                 try {
-                    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1080 } }, audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false, sampleRate: 48000 } });
+                    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1080 } }, audio: { echoCancellation: true } });
                     previewVideo.srcObject = videoStream;
                     previewContainer.style.display = 'block';
                     let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
-                    videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 3500000, audioBitsPerSecond: 256000 });
+                    videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 3500000 });
                     videoChunks = [];
                     videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
                     videoInterval = setInterval(() => notifyTyping('video'), 2000);
@@ -673,12 +766,10 @@
                     };
                     videoRecorder.start();
                     btn.classList.add('recording-active');
-                    setStatus("Recording HD Video...");
-                } catch(e) { alert("Ошибка камеры: " + e.message); }
+                } catch(e) { alert("Ошибка камеры"); }
             } else {
                 videoRecorder.stop();
                 btn.classList.remove('recording-active');
-                setStatus("Encoding HD...");
             }
         }
 
@@ -686,18 +777,9 @@
             const btn = document.getElementById('voice-btn');
             if (!mediaRecorder || mediaRecorder.state === 'inactive') {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 } });
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-                    const source = audioCtx.createMediaStreamSource(stream);
-                    const gainNode = audioCtx.createGain();
-                    gainNode.gain.value = 1.2; 
-                    const destination = audioCtx.createMediaStreamDestination();
-                    source.connect(gainNode);
-                    gainNode.connect(destination);
-                    const boostedStream = destination.stream;
-
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     let mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4';
-                    mediaRecorder = new MediaRecorder(boostedStream, { mimeType: mimeType, audioBitsPerSecond: 320000 });
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                     audioInterval = setInterval(() => notifyTyping('audio'), 2000);
@@ -705,21 +787,18 @@
                         clearInterval(audioInterval); 
                         uploadMedia(new Blob(audioChunks, {type: mimeType})); 
                         stream.getTracks().forEach(t => t.stop()); 
-                        if (audioCtx.state !== 'closed') audioCtx.close();
                     };
                     mediaRecorder.start();
                     btn.classList.add('recording-active');
-                    setStatus("Hi-Fi Recording...");
-                } catch(e) { alert("Mic error: " + e.message); }
+                } catch(e) { alert("Mic error"); }
             } else {
                 mediaRecorder.stop();
                 btn.classList.remove('recording-active');
-                setStatus("Encoding...");
             }
         }
 
         async function pollRelays() {
-            if (!activeContact) return;
+            if (!activeContact || !isAppUnlocked) return;
             const resp = await fetch('/api/contacts');
             const contacts = await resp.json();
             for (let c of contacts) {
@@ -739,28 +818,18 @@
         }
 
         document.addEventListener("visibilitychange", function() {
-            if (document.visibilityState === 'visible') {
+            if (document.visibilityState === 'visible' && isAppUnlocked) {
                 isUpdatingMessages = false; 
                 loadMessages();
                 pingTracker(); 
             }
         });
 
-        function initWallet() {
-            let savedMnemonic = localStorage.getItem('my_mnemonic');
-            if (savedMnemonic) { myWallet = ethers.Wallet.fromMnemonic(savedMnemonic); } 
-            else { myWallet = ethers.Wallet.createRandom(); localStorage.setItem('my_mnemonic', myWallet.mnemonic.phrase); }
-        }
-
-        setInterval(pingTracker, 30000);
-        setInterval(pollRelays, 15000); 
-        
+        // 🌟 ИНИЦИАЛИЗАЦИЯ
         if (document.getElementById('contact-list')) {
-            initWallet(); 
-            loadContacts();
-            if (myUsername) socket.emit('join', { username: myUsername });
-            setTimeout(pingTracker, 2000);
-            if (localStorage.getItem('push_enabled') === 'true') document.getElementById('push-btn').style.background = "#4CAF50";
+            checkWeb3Identity(); // Сначала просим пароль / разблокировку
+            setInterval(pingTracker, 30000);
+            setInterval(pollRelays, 15000); 
         }
     </script>
 </body>
