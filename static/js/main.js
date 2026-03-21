@@ -656,23 +656,49 @@ async function toggleVideo() {
 
     if (!videoRecorder || videoRecorder.state === 'inactive') {
         try {
-            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1080 } }, audio: { echoCancellation: true } });
+            // 🔥 УЛУЧШЕНИЕ: Прокачиваем аудио и оптимизируем видео
+            videoStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: "user", 
+                    width: { ideal: 720 },    // 720x720 идеально для кружочка (резко, но не весит тонну)
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }  // Форсируем плавную картинку (без рывков)
+                }, 
+                audio: { 
+                    echoCancellation: true,
+                    noiseSuppression: false,  // Отключаем мыло и бульканье звука
+                    autoGainControl: false,   // Убираем скачки громкости
+                    sampleRate: 48000,        // Студийная частота дискретизации
+                    channelCount: 2           // Стерео звук (если микрофон поддерживает)
+                } 
+            });
+            
             previewVideo.srcObject = videoStream;
             previewContainer.style.display = 'block';
+            
             let mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/mp4';
-            videoRecorder = new MediaRecorder(videoStream, { mimeType: mimeType, videoBitsPerSecond: 3500000 });
+            
+            // 🔥 УЛУЧШЕНИЕ: Контролируем битрейт и видео, и аудио
+            videoRecorder = new MediaRecorder(videoStream, { 
+                mimeType: mimeType, 
+                videoBitsPerSecond: 2500000, // 2.5 Mbps (высокое качество для кружочка)
+                audioBitsPerSecond: 128000   // 128 kbps для отличного звука внутри видео
+            });
+            
             videoChunks = [];
             videoRecorder.ondataavailable = e => { if (e.data.size > 0) videoChunks.push(e.data); };
             videoInterval = setInterval(() => notifyTyping('video'), 2000);
+            
             videoRecorder.onstop = () => { 
                 clearInterval(videoInterval); 
                 previewContainer.style.display = 'none';
                 videoStream.getTracks().forEach(t => t.stop()); 
                 uploadMedia(new File([new Blob(videoChunks, {type: mimeType})], "circle.webm", { type: "video/webm" })); 
             };
+            
             videoRecorder.start();
             btn.classList.add('recording-active');
-        } catch(e) { alert("Ошибка камеры"); }
+        } catch(e) { alert("Ошибка камеры: " + e.message); }
     } else {
         videoRecorder.stop();
         btn.classList.remove('recording-active');
