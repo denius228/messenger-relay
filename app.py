@@ -14,7 +14,8 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'HIFI_STABLE_V10')
 USER_PASSWORD = os.getenv('CHAT_PASSWORD', '123')
 
 # 🛡 Токен защиты от подделки системных сообщений хакерами
-SYSTEM_BROADCAST_TOKEN = "SUPER_SECRET_GOD_TOKEN_999"
+SYSTEM_BROADCAST_TOKEN = os.getenv('SYSTEM_BROADCAST_TOKEN', 'SUPER_SECRET_GOD_TOKEN_999')
+GODMODE_PASSWORD = os.getenv('GODMODE_PASSWORD', '777_SUPER_SECRET_ADMIN_PASS')
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -174,7 +175,8 @@ def send_push_notification(target_username, sender_username):
 def api_godmode():
     if not session.get('auth'): return "No Auth", 403
     data = request.json
-    if data.get('password') != '777': return "Bad Password", 403
+    if data.get('password') != GODMODE_PASSWORD: 
+        return "Bad Password", 403
     content = data.get('content')
     
     conn = sqlite3.connect(DB_PATH)

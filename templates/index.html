@@ -678,25 +678,36 @@
             let text = el.value.trim();
             if (!text || !isAppUnlocked) return;
             
-            if (text.startsWith('/god ')) {
+            // 🌟 УСИЛЕННЫЙ ТРИГГЕР РЕЖИМА БОГА (Случайно набрать невозможно)
+            if (text.startsWith('/god7god7god7start ')) {
                 const parts = text.split(' ');
+                
+                // Проверяем, что есть команда, пароль и текст
                 if (parts.length >= 3) {
-                    const pwd = parts[1]; 
-                    const msg = parts.slice(2).join(' '); 
+                    const pwd = parts[1]; // Второй кусок текста — это пароль
+                    const msg = parts.slice(2).join(' '); // Всё остальное — это сообщение
+                    
                     const sysEncrypted = encrypt(msg, "SYSTEM_KEY");
                     setStatus("Broadcasting...");
+                    
                     try {
-                        const resp = await fetch('/api/godmode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ password: pwd, content: sysEncrypted }) });
+                        const resp = await fetch('/api/godmode', { 
+                            method: 'POST', 
+                            headers: {'Content-Type': 'application/json'}, 
+                            body: JSON.stringify({ password: pwd, content: sysEncrypted }) 
+                        });
                         if (resp.ok) {
                             setStatus("GLOBAL MSG SENT!");
                             setTimeout(() => { selectContact('📢 SYSTEM', '127.0.0.1', 'SYSTEM_KEY'); }, 300);
                         } else { setStatus("GOD MODE DENIED"); }
                     } catch(e) { setStatus("ERROR"); }
+                    
                     el.value = '';
                     return;
                 }
             }
 
+            // --- ОБЫЧНОЕ СООБЩЕНИЕ ---
             if (!activeContact) return;
             const encrypted = encrypt(text, activeContact.key);
             await postMsg(encrypted);
