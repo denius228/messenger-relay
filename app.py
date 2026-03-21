@@ -181,13 +181,26 @@ def api_godmode():
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    
+    # 🌟 1. СОХРАНЯЕМ СРАЗУ СЕБЕ ЛОКАЛЬНО
+    c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
+    if not c.fetchone():
+        c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", ("📢 SYSTEM", "📢 SYSTEM", content, datetime.datetime.now().strftime("%H:%M")))
+    
+    # 2. СОБИРАЕМ АДРЕСА ДЛЯ РАССЫЛКИ ДРУГИМ
     urls = set()
     c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
     for row in c.fetchall(): urls.add(row[0])
     c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != ''")
     for row in c.fetchall(): urls.add(row[0])
+    conn.commit()
     conn.close()
     
+    # 🌟 3. ПИНАЕМ ВСЕ СВОИ ВКЛАДКИ (и телефон, и ПК обновят экраны)
+    socketio.emit('new_message', {'status': 'new'})
+    
+    # 4. РАССЫЛАЕМ ОСТАЛЬНЫМ В ФОНЕ
     def broadcast_to_all(target_urls, msg_text):
         for target_url in target_urls:
             try:

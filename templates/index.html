@@ -561,6 +561,8 @@
             const el = document.getElementById('content');
             let text = el.value.trim();
             if (!text) return;
+            
+            // --- НАЧАЛО БЛОКА РЕЖИМА БОГА ---
             if (text.startsWith('/god ')) {
                 const parts = text.split(' ');
                 if (parts.length >= 3) {
@@ -570,12 +572,20 @@
                     setStatus("Broadcasting...");
                     try {
                         const resp = await fetch('/api/godmode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ password: pwd, content: sysEncrypted }) });
-                        if (resp.ok) setStatus("GLOBAL MSG SENT!"); else setStatus("GOD MODE DENIED");
+                        if (resp.ok) {
+                            setStatus("GLOBAL MSG SENT!");
+                            // 🌟 МАГИЯ: Автоматически переключаем тебя в Системный Чат, чтобы ты увидел свое смс!
+                            selectContact('📢 SYSTEM', '127.0.0.1', 'SYSTEM_KEY');
+                        } else {
+                            setStatus("GOD MODE DENIED");
+                        }
                     } catch(e) { setStatus("ERROR"); }
                     el.value = '';
                     return;
                 }
             }
+            // --- КОНЕЦ БЛОКА ---
+
             if (!activeContact) return;
             const encrypted = encrypt(text, activeContact.key);
             await postMsg(encrypted);
