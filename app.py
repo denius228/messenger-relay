@@ -186,7 +186,7 @@ def api_godmode():
     c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
     if not c.fetchone():
         c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", ("📢 SYSTEM", "📢 SYSTEM", content, datetime.datetime.now().strftime("%H:%M")))
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", ("📢 SYSTEM", "📢 SYSTEM", content, datetime.datetime.utcnow().isoformat() + "Z"))
     
     urls = set()
     c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
@@ -252,7 +252,7 @@ def receive():
             return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
         real_friend_name = row[0]
 
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.now().strftime("%H:%M")))
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.utcnow().isoformat() + "Z"))
     conn.commit()
     
     if raw_sender == "📢 SYSTEM":
@@ -290,7 +290,7 @@ def send():
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target_username, "Me", content, datetime.datetime.now().strftime("%H:%M")))
+    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target_username, "Me", content, datetime.datetime.utcnow().isoformat() + "Z"))
     conn.commit()
     conn.close()
     
@@ -309,7 +309,7 @@ def send():
     except:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_username, content, datetime.datetime.now().strftime("%H:%M")))
+        c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_username, content, datetime.datetime.utcnow().isoformat() + "Z"))
         conn.commit()
         conn.close()
         return "Relayed"

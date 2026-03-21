@@ -653,6 +653,14 @@
                     let isMedia = false;
                     let dlBtn = `<br><a id="dl_${mediaId}" style="display:none; color: #40a7e3; text-decoration: none; font-size: 13px; font-weight: bold; margin-top: 5px; cursor: pointer;">💾 Сохранить</a>`;
 
+                    // 🌟 УМНОЕ ВРЕМЯ (ЛОКАЛЬНОЕ):
+                    let formattedTime = m[2]; // По умолчанию оставляем как есть (для старых смс типа "15:30")
+                    if (m[2] && m[2].endsWith('Z')) {
+                        // Если время пришло в новом формате UTC (с буквой Z), переводим его в локальное время телефона
+                        const dateObj = new Date(m[2]);
+                        formattedTime = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    }
+
                     if (text.startsWith("IMG:")) { content = `<img id="${mediaId}" src="" alt="Loading..." loading="lazy">` + dlBtn; isMedia = true; } 
                     else if (text.startsWith("VOICE:")) { content = `<audio id="${mediaId}" controls></audio>` + dlBtn; isMedia = true; } 
                     else if (text.startsWith("VIDEO:")) { content = `<video id="${mediaId}" class="circle-video" controls playsinline loop preload="metadata"></video>` + dlBtn; isMedia = true; }
@@ -661,7 +669,7 @@
                     div.className = `msg ${isOut ? 'out' : 'in'}`;
                     
                     if (m[0] === "📢 SYSTEM" || m[1] === "📢 SYSTEM") { div.style.background = "#ff4d4d"; div.style.color = "white"; div.style.border = "2px solid white"; }
-                    div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${m[2]}</small>`;
+                    div.innerHTML = `<b>${isOut ? '' : (contactMap[m[0]] || m[0])}</b><br>${content} <small>${formattedTime}</small>`;
                     chat.appendChild(div);
                     
                     if (isMedia && text.startsWith("IMG:")) displayMedia(text.replace("IMG:",""), mediaId);
