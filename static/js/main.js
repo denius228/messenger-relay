@@ -683,20 +683,38 @@ async function toggleVoice() {
     const btn = document.getElementById('voice-btn');
     if (!mediaRecorder || mediaRecorder.state === 'inactive') {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // 🔥 УЛУЧШЕНИЕ: Форсируем студийное качество звука у браузера
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,   // Оставляем защиту от эха
+                    noiseSuppression: false,  // ОТКЛЮЧАЕМ мыло и бульканье
+                    autoGainControl: false,   // ОТКЛЮЧАЕМ скачки громкости
+                    sampleRate: 48000,        // Максимальная частота (как в MP3/FLAC)
+                    channelCount: 2           // Просим стерео (если позволяет микрофон)
+                } 
+            });
+            
             let mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4';
-            mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+            
+            // 🔥 УЛУЧШЕНИЕ: Задаем высокий битрейт (128 kbps вместо дефолтных 48 kbps)
+            mediaRecorder = new MediaRecorder(stream, { 
+                mimeType: mimeType,
+                audioBitsPerSecond: 128000 
+            });
+            
             audioChunks = [];
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
             audioInterval = setInterval(() => notifyTyping('audio'), 2000);
+            
             mediaRecorder.onstop = () => { 
                 clearInterval(audioInterval); 
                 uploadMedia(new Blob(audioChunks, {type: mimeType})); 
                 stream.getTracks().forEach(t => t.stop()); 
             };
+            
             mediaRecorder.start();
             btn.classList.add('recording-active');
-        } catch(e) { alert("Mic error"); }
+        } catch(e) { alert("Mic error: " + e.message); }
     } else {
         mediaRecorder.stop();
         btn.classList.remove('recording-active');
