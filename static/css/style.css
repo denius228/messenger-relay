@@ -1,0 +1,59 @@
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0e1621; color: white; margin: 0; padding: 0; width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+.header { background: #17212b; padding: max(12px, env(safe-area-inset-top)) 12px 12px 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #111; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+.btn-small { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
+#status-bar { background: #212d3b; color: #40a7e3; font-size: 10px; padding: 4px; text-align: center; border-bottom: 1px solid #000; text-transform: uppercase; flex-shrink: 0; transition: background 0.3s; }
+.restoring { background: #ff9800 !important; color: white !important; font-weight: bold; }
+
+/* --- КОНТАКТЫ И СЧЕТЧИКИ (Badges) --- */
+#contact-list { background: #17212b; padding: 10px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #111; flex-shrink: 0; align-items: center; }
+.contact-card { background: #242f3d; padding: 8px 15px; border-radius: 20px; font-size: 14px; white-space: nowrap; border: 1px solid transparent; display: flex; align-items: center; gap: 10px; transition: 0.2s; }
+.contact-card.active { border-color: #40a7e3; background: #2b5278; }
+.contact-name { cursor: pointer; flex: 1; display: flex; align-items: center; gap: 6px; }
+.delete-btn { color: #ff4d4d; cursor: pointer; font-weight: bold; font-size: 12px; padding: 2px 5px; border-radius: 50%; }
+
+/* 🔥 СТИЛЬ ДЛЯ КРАСНОГО СЧЕТЧИКА НЕПРОЧИТАННЫХ */
+.unread-badge {
+    background: #ff4d4d;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 7px;
+    border-radius: 12px;
+    box-shadow: 0 0 8px rgba(255, 77, 77, 0.6);
+    animation: popIn 0.3s ease-out;
+}
+@keyframes popIn { 0% { transform: scale(0); } 80% { transform: scale(1.2); } 100% { transform: scale(1); } }
+
+/* --- ЧАТ И МЕССЕДЖИ --- */
+#chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; background-image: url('https://www.transparenttextures.com/patterns/carbon-fibre.png'); scroll-behavior: smooth; }
+.msg, input { -webkit-user-select: text; user-select: text; }
+.msg { max-width: 85%; margin-bottom: 12px; padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; }
+.msg.in { align-self: flex-start; background: #182533; border-bottom-left-radius: 4px; }
+.msg.out { align-self: flex-end; background: #2b5278; border-bottom-right-radius: 4px; }
+.msg img { max-width: 100%; border-radius: 10px; margin-top: 5px; background: #182533; min-height: 150px; object-fit: cover; }
+.msg audio { width: 220px; height: 40px; margin-top: 8px; display: block; }
+.msg small { font-size: 0.7em; color: #7f91a4; display: block; text-align: right; margin-top: 5px; }
+.msg video.circle-video { width: 220px; height: 220px; border-radius: 50%; object-fit: cover; background: #182533; margin-top: 5px; border: 3px solid #40a7e3; }
+
+/* --- КОНТРОЛЫ --- */
+.controls { background: #17212b; padding: 10px 15px; display: flex; gap: 10px; align-items: center; padding-bottom: 15px; position: relative; z-index: 10; flex-shrink: 0; }
+.input-area { flex: 1; background: #242f3d; border-radius: 25px; display: flex; align-items: center; padding: 2px 12px; }
+input { background: none; border: none; color: white; padding: 12px; outline: none; font-size: 16px; flex: 1; width: 100%; }
+button { background: none; border: none; color: #40a7e3; font-weight: bold; font-size: 26px; cursor: pointer; flex-shrink: 0; }
+.recording-active { animation: pulse-red 1s infinite; }
+@keyframes pulse-red { 0% {color: #40a7e3} 50% {color: red} 100% {color: #40a7e3} }
+
+#video-preview-container { display: none; position: absolute; bottom: 70px; right: 15px; width: 150px; height: 150px; border-radius: 50%; overflow: hidden; border: 3px solid #ff4d4d; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100; background: black; }
+#video-preview { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+
+/* --- МОДАЛКИ И WEB3 --- */
+.modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #17212b; padding: 25px; border: 1px solid #40a7e3; border-radius: 20px; z-index: 100; width: 85%; max-width: 320px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+.modal input { width: 100%; margin-bottom: 15px; display: block; background: #242f3d; color: white; border: 1px solid #333; padding: 12px; border-radius: 10px; box-sizing: border-box; }
+#qr-code { margin: 20px auto; background: white; padding: 10px; display: inline-block; border-radius: 10px; }
+#reader { width: 100%; margin-bottom: 15px; border-radius: 10px; overflow: hidden; }
+
+#web3-auth-modal { position:fixed; top:0; left:0; width:100%; height:100%; background:#0e1621; z-index:9999; display:none; flex-direction:column; align-items:center; justify-content:center; padding:20px; text-align:center; }
+.auth-input { width:100%; max-width:300px; padding:15px; margin-bottom:15px; border-radius:10px; border:1px solid #40a7e3; background:#242f3d; color:white; text-align:center; font-size:16px; box-sizing:border-box; }
+.btn-primary { background:#40a7e3; color:white; border:none; padding:15px; border-radius:10px; font-weight:bold; cursor:pointer; width:100%; max-width:300px; font-size:16px; margin-bottom:10px; }

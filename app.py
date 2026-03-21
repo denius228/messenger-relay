@@ -275,8 +275,8 @@ def receive():
         
     conn.close()
     
-    if target: socketio.emit('new_message', {'status': 'new'}, room=target)
-    else: socketio.emit('new_message', {'status': 'new'})
+    if target: socketio.emit('new_message', {'status': 'new', 'sender': real_friend_name}, room=target)
+    else: socketio.emit('new_message', {'status': 'new', 'sender': real_friend_name})
     return jsonify({"status": "delivered"}), 200
 
 @app.route('/send_message', methods=['POST'])
