@@ -1,84 +1,26 @@
-import sys, os, sqlite3, datetime, uuid, requests, time, threading, json, base64
+import uuid, requests, datetime, threading
 from flask import Flask, request, jsonify, session, redirect, url_for, send_from_directory, render_template
 from flask_cors import CORS
-from pywebpush import webpush, WebPushException
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO, join_room
+
+# Импортируем наши новые модули
+import config
+from database import init_db, query_db
+from utils import ensure_vapid_keys, send_push_notification, cleanup_old_files_task
 
 app = Flask(__name__)
 CORS(app)
-
-# 🔒 Безопасное хранение паролей (можно задавать через переменные окружения)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'HIFI_STABLE_V10')
-USER_PASSWORD = os.getenv('CHAT_PASSWORD', '123')
-
-# 🛡 Токен защиты от подделки системных сообщений хакерами
-SYSTEM_BROADCAST_TOKEN = os.getenv('SYSTEM_BROADCAST_TOKEN', 'SUPER_SECRET_GOD_TOKEN_999')
-GODMODE_PASSWORD = os.getenv('GODMODE_PASSWORD', '777_SUPER_SECRET_ADMIN_PASS')
-
+app.secret_key = config.SECRET_KEY
+app.config['MAX_CONTENT_LENGTH'] = config.MAX_CONTENT_LENGTH 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 🛡 ЗАЩИТА ОТ БЛОКИРОВОК CLOUDFLARE И NGROK
-REQ_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "ngrok-skip-browser-warning": "true",
-    "Bypass-Tunnel-Reminder": "true"
-}
+# Инициализация БД и ключей
+init_db()
+VAPID_PUBLIC_KEY = ensure_vapid_keys()
 
-UPLOAD_FOLDER = 'uploads'
-DB_DIR = 'db_data'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(DB_DIR, exist_ok=True)
+# Запуск фоновой очистки файлов
+threading.Thread(target=cleanup_old_files_task, daemon=True).start()
 
-DB_PATH = os.path.join(DB_DIR, 'messages.db')
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 
-
-VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
-VAPID_PUBLIC_TXT = os.path.join(DB_DIR, "vapid_public.txt")
-VAPID_PUBLIC_KEY = ""
-
-if not os.path.exists(VAPID_PRIVATE_PEM):
-    private_key = ec.generate_private_key(ec.SECP256R1())
-    pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption()
-    )
-    with open(VAPID_PRIVATE_PEM, "wb") as f:
-        f.write(pem)
-        
-    public_numbers = private_key.public_key().public_numbers()
-    public_bytes = b'\x04' + public_numbers.x.to_bytes(32, 'big') + public_numbers.y.to_bytes(32, 'big')
-    pub_b64 = base64.urlsafe_b64encode(public_bytes).rstrip(b'=').decode('utf-8')
-    with open(VAPID_PUBLIC_TXT, "w") as f:
-        f.write(pub_b64)
-
-with open(VAPID_PUBLIC_TXT, "r") as f:
-    VAPID_PUBLIC_KEY = f.read().strip()
-
-def cleanup_old_files():
-    while True:
-        now = time.time()
-        for filename in os.listdir(UPLOAD_FOLDER):
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            if os.path.isfile(filepath) and os.stat(filepath).st_mtime < now - 604800:
-                try: os.remove(filepath)
-                except Exception: pass
-        time.sleep(86400)
-
-threading.Thread(target=cleanup_old_files, daemon=True).start()
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS msgs (chat_with TEXT, sender TEXT, content TEXT, timestamp TEXT)')
-    c.execute('CREATE TABLE IF NOT EXISTS contacts (name TEXT, ip TEXT, secret_key TEXT)')
-    c.execute('CREATE TABLE IF NOT EXISTS mailbox (target_id TEXT, sender_id TEXT, content TEXT, timestamp TEXT)')
-    c.execute('CREATE TABLE IF NOT EXISTS tracker (username TEXT PRIMARY KEY, current_url TEXT, last_seen TEXT)')
-    c.execute('CREATE TABLE IF NOT EXISTS push_subs (username TEXT PRIMARY KEY, sub_json TEXT)')
-    conn.commit()
-    conn.close()
 
 @socketio.on('join')
 def on_join(data):
@@ -93,122 +35,99 @@ def index():
     return render_template('index.html', logged_in=session.get('auth'), vapid_public_key=VAPID_PUBLIC_KEY)
 
 @app.route('/uploads/<path:filename>')
-def download_file(filename): return send_from_directory(UPLOAD_FOLDER, filename)
-
-@app.route('/api/upload', methods=['POST'])
-def upload_file():
-    if not session.get('auth'): 
-        return jsonify({"error": "Unauthorized"}), 403
-    
-    if 'file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
-        
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
-
-    filename = str(uuid.uuid4()) + ".enc"
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
-    return jsonify({"url": filename})
+def download_file(filename): return send_from_directory(config.UPLOAD_FOLDER, filename)
 
 @app.route('/login', methods=['POST'])
 def login():
-    if request.form.get('password') == USER_PASSWORD: session['auth'] = True
+    if request.form.get('password') == config.USER_PASSWORD: session['auth'] = True
     return redirect(url_for('index'))
+
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    if not session.get('auth'): return jsonify({"error": "Unauthorized"}), 403
+    if 'file' not in request.files or request.files['file'].filename == '': return jsonify({"error": "No file"}), 400
+
+    filename = str(uuid.uuid4()) + ".enc"
+    filepath = f"{config.UPLOAD_FOLDER}/{filename}"
+    request.files['file'].save(filepath)
+    return jsonify({"url": filename})
 
 @app.route('/api/tracker/update', methods=['POST'])
 def update_tracker():
     data = request.json
-    username = data.get('username')
     url = data.get('url').replace('https://','').replace('http://','').strip('/')
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("REPLACE INTO tracker (username, current_url, last_seen) VALUES (?, ?, ?)", (username, url, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-    conn.close()
+    query_db("REPLACE INTO tracker (username, current_url, last_seen) VALUES (?, ?, ?)", 
+             (data.get('username'), url, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")), commit=True)
     return jsonify({"status": "updated"})
 
 @app.route('/api/tracker/get', methods=['GET'])
 def get_tracker():
-    username = request.args.get('username')
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT current_url FROM tracker WHERE username = ?", (username,))
-    row = c.fetchone()
-    conn.close()
+    row = query_db("SELECT current_url FROM tracker WHERE username = ?", (request.args.get('username'),), fetchone=True)
     if row: return jsonify({"url": row[0]})
     return jsonify({"url": None, "status": "offline"}), 200
 
 @app.route('/api/push/subscribe', methods=['POST'])
 def push_subscribe():
+    import json
     data = request.json
-    username = data.get('username')
-    sub_json = json.dumps(data.get('subscription'))
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("REPLACE INTO push_subs (username, sub_json) VALUES (?, ?)", (username, sub_json))
-    conn.commit()
-    conn.close()
+    query_db("REPLACE INTO push_subs (username, sub_json) VALUES (?, ?)", 
+             (data.get('username'), json.dumps(data.get('subscription'))), commit=True)
     return jsonify({"status": "subscribed"})
 
-def send_push_notification(target_username, sender_username):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT sub_json FROM push_subs WHERE username = ?", (target_username,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        try:
-            subscription_info = json.loads(row[0])
-            webpush(
-                subscription_info=subscription_info,
-                data=json.dumps({"title": "Secure Chat", "body": f"Новое сообщение от {sender_username} 🔒"}),
-                vapid_private_key=VAPID_PRIVATE_PEM,
-                vapid_claims={"sub": "mailto:admin@eprobot.ru"},
-                ttl=86400,
-                headers={"Urgency": "high", "Topic": "new-message"}
-            )
-        except Exception: pass
+@app.route('/api/contacts', methods=['GET', 'POST', 'DELETE'])
+def manage_contacts():
+    if not session.get('auth'): return jsonify({"error": "No Auth"}), 403
+    if request.method == 'POST':
+        d = request.json
+        clean_ip = d['ip'].replace('https://','').replace('http://','').strip('/')
+        query_db("INSERT INTO contacts VALUES (?, ?, ?)", (d['name'], clean_ip, d['key']), commit=True)
+    elif request.method == 'DELETE':
+        query_db("DELETE FROM contacts WHERE name = ?", (request.json['name'],), commit=True)
+        
+    res = query_db("SELECT * FROM contacts", fetchall=True)
+    return jsonify(res)
 
-@app.route('/api/godmode', methods=['POST'])
-def api_godmode():
+@app.route('/api/messages')
+def get_messages():
+    chat_with = request.args.get('chat_with')
+    secret = request.args.get('secret') 
+
+    if chat_with and secret:
+        if query_db("SELECT name FROM contacts WHERE name = ? AND secret_key = ?", (chat_with, secret), fetchone=True):
+            return jsonify(query_db("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY rowid ASC", (chat_with,), fetchall=True))
+        return jsonify([]) 
+
+    if session.get('auth') and chat_with:
+        return jsonify(query_db("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY rowid ASC", (chat_with,), fetchall=True))
+        
+    return jsonify([])
+
+@app.route('/api/mailbox/check')
+def check_mailbox():
+    tid = request.args.get('target_id')
+    rows = query_db("SELECT sender_id, content, timestamp FROM mailbox WHERE target_id = ?", (tid,), fetchall=True)
+    if rows:
+        query_db("DELETE FROM mailbox WHERE target_id = ?", (tid,), commit=True)
+    return jsonify({"received": len(rows), "messages": rows})
+
+@app.route('/api/messages/save_synced', methods=['POST'])
+def save_synced():
+    if not session.get('auth'): return "No Auth", 403
+    for m in request.json.get('messages', []): 
+        query_db("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[0], m[1], m[2]), commit=True)
+    return "OK"
+
+@app.route('/api/restore', methods=['POST'])
+def api_restore():
     if not session.get('auth'): return "No Auth", 403
     data = request.json
-    if data.get('password') != GODMODE_PASSWORD: 
-        return "Bad Password", 403
-    content = data.get('content')
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Сразу сохраняем локально, чтобы ты увидел сообщение без задержек
-    c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
-    if not c.fetchone():
-        c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", ("📢 SYSTEM", "📢 SYSTEM", content, datetime.datetime.utcnow().isoformat() + "Z"))
-    
-    urls = set()
-    c.execute("SELECT current_url FROM tracker WHERE current_url IS NOT NULL")
-    for row in c.fetchall(): urls.add(row[0])
-    c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != ''")
-    for row in c.fetchall(): urls.add(row[0])
-    conn.commit()
-    conn.close()
-    
-    # Обновляем все открытые вкладки (твой ПК и телефон)
-    socketio.emit('new_message', {'status': 'new'})
-    
-    def broadcast_to_all(target_urls, msg_text):
-        for target_url in target_urls:
-            try:
-                payload = {"sender_username": "📢 SYSTEM", "target": "", "content": msg_text, "sys_token": SYSTEM_BROADCAST_TOKEN}
-                try: requests.post(f"https://{target_url}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
-                except: requests.post(f"http://{target_url}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
-            except: pass
-
-    threading.Thread(target=broadcast_to_all, args=(urls, content), daemon=True).start()
-    return jsonify({"status": "Broadcast started in background"})
+    for ct in data.get('contacts', []):
+        if not query_db("SELECT 1 FROM contacts WHERE name=?", (ct[0],), fetchone=True): 
+            query_db("INSERT INTO contacts VALUES (?, ?, ?)", (ct[0], ct[1], ct[2]), commit=True)
+    for m in data.get('messages', []):
+        if not query_db("SELECT 1 FROM msgs WHERE chat_with=? AND content=? AND timestamp=?", (m[0], m[2], m[3]), fetchone=True): 
+            query_db("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[1], m[2], m[3]), commit=True)
+    return jsonify({"status": "restored"})
 
 @app.route('/receive', methods=['POST'])
 def receive():
@@ -217,64 +136,45 @@ def receive():
     target = data.get('target')
     content = data.get('content')
     
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # 🌟 ЗАЩИТА ОТ ПЕТЛИ (АНТИ-ДУБЛИКАТ): 
-    # Если ты тестируешь 2 устройства на 1 сервере, мы игнорируем "эхо" от самого себя
-    c.execute("SELECT 1 FROM msgs WHERE content = ?", (content,))
-    if c.fetchone():
-        conn.close()
+    # Защита от эха (Loopback)
+    if query_db("SELECT 1 FROM msgs WHERE content = ?", (content,), fetchone=True):
         return jsonify({"status": "local_loopback_ignored"}), 200
 
     is_new_system_msg = False
-    
     if raw_sender == "📢 SYSTEM":
-        if data.get('sys_token') != SYSTEM_BROADCAST_TOKEN:
-            conn.close()
-            return jsonify({"error": "Security Breach: Invalid System Token"}), 403
-
-        c.execute("SELECT 1 FROM msgs WHERE chat_with = '📢 SYSTEM' AND content = ?", (content,))
-        if c.fetchone():
-            conn.close()
+        if data.get('sys_token') != config.SYSTEM_BROADCAST_TOKEN:
+            return jsonify({"error": "Security Breach"}), 403
+        if query_db("SELECT 1 FROM msgs WHERE chat_with = '📢 SYSTEM' AND content = ?", (content,), fetchone=True):
             return jsonify({"status": "already_know"}), 200
             
-        c.execute("SELECT name FROM contacts WHERE name = '📢 SYSTEM'")
-        if not c.fetchone():
-            c.execute("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"))
+        if not query_db("SELECT name FROM contacts WHERE name = '📢 SYSTEM'", fetchone=True):
+            query_db("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"), commit=True)
         real_friend_name = "📢 SYSTEM"
         is_new_system_msg = True
     else:
-        c.execute("SELECT name FROM contacts WHERE name = ? OR ip = ?", (raw_sender, raw_sender))
-        row = c.fetchone()
-        if not row:
-            conn.close()
-            return jsonify({"error": f"Anti-Spam: Unknown sender '{raw_sender}'"}), 403
+        row = query_db("SELECT name FROM contacts WHERE name = ? OR ip = ?", (raw_sender, raw_sender), fetchone=True)
+        if not row: return jsonify({"error": "Unknown sender"}), 403
         real_friend_name = row[0]
 
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.utcnow().isoformat() + "Z"))
-    conn.commit()
+    query_db("INSERT INTO msgs VALUES (?, ?, ?, ?)", (real_friend_name, real_friend_name, content, datetime.datetime.utcnow().isoformat() + "Z"), commit=True)
     
     if raw_sender == "📢 SYSTEM":
-        c.execute("SELECT username FROM push_subs")
-        for (usr,) in c.fetchall(): send_push_notification(usr, "📢 SYSTEM")
+        subs = query_db("SELECT username FROM push_subs", fetchall=True)
+        for (usr,) in subs: send_push_notification(usr, "📢 SYSTEM")
         
         if is_new_system_msg:
-            c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != '' AND name != '📢 SYSTEM'")
-            friends = c.fetchall()
+            friends = query_db("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != '' AND name != '📢 SYSTEM'", fetchall=True)
             def spread_virus(friend_ips, msg_text):
-                payload = {"sender_username": "📢 SYSTEM", "target": "", "content": msg_text, "sys_token": SYSTEM_BROADCAST_TOKEN}
+                payload = {"sender_username": "📢 SYSTEM", "target": "", "content": msg_text, "sys_token": config.SYSTEM_BROADCAST_TOKEN}
                 for (ip,) in friend_ips:
-                    try: requests.post(f"https://{ip}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
+                    try: requests.post(f"https://{ip}/receive", json=payload, headers=config.REQ_HEADERS, timeout=3)
                     except:
-                        try: requests.post(f"http://{ip}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
+                        try: requests.post(f"http://{ip}/receive", json=payload, headers=config.REQ_HEADERS, timeout=3)
                         except: pass
             threading.Thread(target=spread_virus, args=(friends, content), daemon=True).start()
     else:
         if target: send_push_notification(target, real_friend_name)
         
-    conn.close()
-    
     if target: socketio.emit('new_message', {'status': 'new', 'sender': real_friend_name}, room=target)
     else: socketio.emit('new_message', {'status': 'new', 'sender': real_friend_name})
     return jsonify({"status": "delivered"}), 200
@@ -284,152 +184,60 @@ def send():
     if not session.get('auth'): return "No Auth", 403
     data = request.json
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
-    target_username = data.get('target_username')
-    content = data.get('content')
-    my_username = data.get('my_id') 
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target_username, "Me", content, datetime.datetime.utcnow().isoformat() + "Z"))
-    conn.commit()
-    conn.close()
+    query_db("INSERT INTO msgs VALUES (?, ?, ?, ?)", (data.get('target_username'), "Me", data.get('content'), datetime.datetime.utcnow().isoformat() + "Z"), commit=True)
     
     try:
-        url_https = f"https://{target}/receive"
-        payload = {"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}
+        payload = {"sender": data.get('my_id'), "sender_username": data.get('my_id'), "target": data.get('target_username'), "content": data.get('content')}
         try:
-            resp = requests.post(url_https, json=payload, headers=REQ_HEADERS, timeout=3)
-            if resp.status_code == 200: return "OK"
-            raise Exception("HTTPS Failed")
+            if requests.post(f"https://{target}/receive", json=payload, headers=config.REQ_HEADERS, timeout=3).status_code == 200: return "OK"
+            raise Exception()
         except:
-            url_http = f"http://{target}/receive"
-            resp = requests.post(url_http, json=payload, headers=REQ_HEADERS, timeout=3)
-            if resp.status_code == 200: return "OK"
-            raise Exception("HTTP Failed")
+            if requests.post(f"http://{target}/receive", json=payload, headers=config.REQ_HEADERS, timeout=3).status_code == 200: return "OK"
+            raise Exception()
     except:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_username, content, datetime.datetime.utcnow().isoformat() + "Z"))
-        conn.commit()
-        conn.close()
+        query_db("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, data.get('my_id'), data.get('content'), datetime.datetime.utcnow().isoformat() + "Z"), commit=True)
         return "Relayed"
 
-@app.route('/api/contacts', methods=['GET', 'POST', 'DELETE'])
-def manage_contacts():
-    if not session.get('auth'): return jsonify({"error": "No Auth"}), 403
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    if request.method == 'POST':
-        d = request.json
-        clean_ip = d['ip'].replace('https://','').replace('http://','').strip('/')
-        c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (d['name'], clean_ip, d['key']))
-        conn.commit()
-    elif request.method == 'DELETE':
-        d = request.json
-        c.execute("DELETE FROM contacts WHERE name = ?", (d['name'],))
-        conn.commit()
-    c.execute("SELECT * FROM contacts")
-    res = c.fetchall()
-    conn.close()
-    return jsonify(res)
-
-@app.route('/api/messages')
-def get_messages():
-    chat_with = request.args.get('chat_with')
-    secret = request.args.get('secret') 
+@app.route('/api/godmode', methods=['POST'])
+def api_godmode():
+    if not session.get('auth') or request.json.get('password') != config.GODMODE_PASSWORD: return "Denied", 403
+    content = request.json.get('content')
     
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    if chat_with and secret:
-        c.execute("SELECT name FROM contacts WHERE name = ? AND secret_key = ?", (chat_with, secret))
-        if c.fetchone():
-            # 🌟 ИЗМЕНЕНИЕ: Сортируем по скрытому rowid (порядку добавления), а не по строке времени!
-            c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY rowid ASC", (chat_with,))
-            messages = c.fetchall()
-            conn.close()
-            return jsonify(messages)
-        else:
-            conn.close()
-            return jsonify([]) 
-
-    if session.get('auth'):
-        if not chat_with: 
-            conn.close()
-            return jsonify([])
-        # 🌟 ИЗМЕНЕНИЕ: Сортируем по скрытому rowid
-        c.execute("SELECT sender, content, timestamp FROM msgs WHERE chat_with = ? ORDER BY rowid ASC", (chat_with,))
-        messages = c.fetchall()
-        conn.close()
-        return jsonify(messages)
-        
-    conn.close()
-    return jsonify([])
-
-@app.route('/api/mailbox/check')
-def check_mailbox():
-    tid = request.args.get('target_id')
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT sender_id, content, timestamp FROM mailbox WHERE target_id = ?", (tid,))
-    rows = c.fetchall()
-    if rows:
-        c.execute("DELETE FROM mailbox WHERE target_id = ?", (tid,))
-        conn.commit()
-    conn.close()
-    return jsonify({"received": len(rows), "messages": rows})
-
-@app.route('/api/messages/save_synced', methods=['POST'])
-def save_synced():
-    if not session.get('auth'): return "No Auth", 403
-    data = request.json.get('messages', [])
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    for m in data: c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[0], m[1], m[2]))
-    conn.commit()
-    conn.close()
-    return "OK"
-
-@app.route('/api/restore', methods=['POST'])
-def api_restore():
-    if not session.get('auth'): return "No Auth", 403
-    data = request.json
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    for ct in data.get('contacts', []):
-        c.execute("SELECT 1 FROM contacts WHERE name=?", (ct[0],))
-        if not c.fetchone(): c.execute("INSERT INTO contacts VALUES (?, ?, ?)", (ct[0], ct[1], ct[2]))
-    for m in data.get('messages', []):
-        c.execute("SELECT 1 FROM msgs WHERE chat_with=? AND content=? AND timestamp=?", (m[0], m[2], m[3]))
-        if not c.fetchone(): c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (m[0], m[1], m[2], m[3]))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "restored"})
+    if not query_db("SELECT name FROM contacts WHERE name = '📢 SYSTEM'", fetchone=True):
+        query_db("INSERT INTO contacts VALUES (?, ?, ?)", ("📢 SYSTEM", "127.0.0.1", "SYSTEM_KEY"), commit=True)
+    query_db("INSERT INTO msgs VALUES (?, ?, ?, ?)", ("📢 SYSTEM", "📢 SYSTEM", content, datetime.datetime.utcnow().isoformat() + "Z"), commit=True)
+    socketio.emit('new_message', {'status': 'new', 'sender': '📢 SYSTEM'})
+    
+    urls = set(row[0] for row in query_db("SELECT current_url FROM tracker WHERE current_url IS NOT NULL", fetchall=True))
+    urls.update(row[0] for row in query_db("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != ''", fetchall=True))
+    
+    def broadcast_to_all(target_urls, msg_text):
+        for url in target_urls:
+            payload = {"sender_username": "📢 SYSTEM", "target": "", "content": msg_text, "sys_token": config.SYSTEM_BROADCAST_TOKEN}
+            try: requests.post(f"https://{url}/receive", json=payload, headers=config.REQ_HEADERS, timeout=3)
+            except: 
+                try: requests.post(f"http://{url}/receive", json=payload, headers=config.REQ_HEADERS, timeout=3)
+                except: pass
+    threading.Thread(target=broadcast_to_all, args=(urls, content), daemon=True).start()
+    return jsonify({"status": "Broadcast started"})
 
 @app.route('/api/typing', methods=['POST'])
 def api_typing():
     data = request.json
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
-    
     def send_typing():
-        try:
-            payload = {"sender_username": data.get('my_id'), "target": data.get('target_username'), "status_type": data.get('status_type', 'typing')}
-            try: requests.post(f"https://{target}/receive_typing", json=payload, headers=REQ_HEADERS, timeout=2)
-            except: requests.post(f"http://{target}/receive_typing", json=payload, headers=REQ_HEADERS, timeout=2)
-        except: pass
-
+        payload = {"sender_username": data.get('my_id'), "target": data.get('target_username'), "status_type": data.get('status_type', 'typing')}
+        try: requests.post(f"https://{target}/receive_typing", json=payload, headers=config.REQ_HEADERS, timeout=2)
+        except: 
+            try: requests.post(f"http://{target}/receive_typing", json=payload, headers=config.REQ_HEADERS, timeout=2)
+            except: pass
     threading.Thread(target=send_typing, daemon=True).start()
     return "OK"
 
 @app.route('/receive_typing', methods=['POST'])
 def receive_typing():
-    data = request.json
-    sender = data.get('sender_username')
-    target = data.get('target')
-    status_type = data.get('status_type', 'typing')
-    socketio.emit('user_typing', {'sender': sender, 'status_type': status_type}, room=target)
+    socketio.emit('user_typing', {'sender': request.json.get('sender_username'), 'status_type': request.json.get('status_type', 'typing')}, room=request.json.get('target'))
     return "OK"
 
 if __name__ == '__main__':
-    init_db()
     socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
