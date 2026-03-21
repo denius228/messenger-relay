@@ -8,7 +8,7 @@ from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
 CORS(app)
-app.secret_key = 'HIFI_STABLE_V10'
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'HIFI_STABLE_V10')
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -25,7 +25,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, 'messages.db')
-USER_PASSWORD = "123"
+USER_PASSWORD = os.getenv('CHAT_PASSWORD', '123')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 
 
 VAPID_PRIVATE_PEM = os.path.join(DB_DIR, "vapid_private.pem")
@@ -97,9 +97,25 @@ def download_file(filename): return send_from_directory(UPLOAD_FOLDER, filename)
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    data = request.json['data']
+    # 🔒 Защита от спамеров и исчерпания диска
+    if not session.get('auth'): 
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    # 📦 Проверка наличия файла в запросе
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+        
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    # Генерируем уникальное имя файла
     filename = str(uuid.uuid4()) + ".enc"
-    with open(os.path.join(UPLOAD_FOLDER, filename), 'w') as f: f.write(data)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    
+    # Сохраняем файл бинарным потоком напрямую на диск (ОЗУ не переполняется)
+    file.save(filepath)
+    
     return jsonify({"url": filename})
 
 @app.route('/login', methods=['POST'])
@@ -161,6 +177,8 @@ def send_push_notification(target_username, sender_username):
             )
         except Exception: pass
 
+SYSTEM_BROADCAST_TOKEN = "SUPER_SECRET_GOD_TOKEN_999"
+
 @app.route('/api/godmode', methods=['POST'])
 def api_godmode():
     if not session.get('auth'): return "No Auth", 403
@@ -177,14 +195,19 @@ def api_godmode():
     for row in c.fetchall(): urls.add(row[0])
     conn.close()
     
-    success = 0
-    for target_url in urls:
-        try:
-            try: requests.post(f"https://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, headers=REQ_HEADERS, timeout=5)
-            except: requests.post(f"http://{target_url}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": content}, headers=REQ_HEADERS, timeout=5)
-            success += 1
-        except: pass
-    return jsonify({"status": f"Broadcasted to {success} nodes"})
+    # Функция для асинхронной рассылки
+    def broadcast_to_all(target_urls, msg_text):
+        for target_url in target_urls:
+            try:
+                payload = {"sender_username": "📢 SYSTEM", "target": "", "content": msg_text, "sys_token": SYSTEM_BROADCAST_TOKEN}
+                try: requests.post(f"https://{target_url}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
+                except: requests.post(f"http://{target_url}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
+            except: pass
+
+    # Запускаем вирусную рассылку в фоне! Сервер админа больше не зависает.
+    threading.Thread(target=broadcast_to_all, args=(urls, content), daemon=True).start()
+    
+    return jsonify({"status": "Broadcast started in background"})
 
 @app.route('/receive', methods=['POST'])
 def receive():
@@ -198,6 +221,11 @@ def receive():
     is_new_system_msg = False
     
     if raw_sender == "📢 SYSTEM":
+        # Проверяем токен! Если его нет или он неверный — это атака хакера.
+        if data.get('sys_token') != SYSTEM_BROADCAST_TOKEN:
+            conn.close()
+            return jsonify({"error": "Security Breach: Invalid System Token"}), 403
+
         # 🦠 АНТИ-ШТОРМ: Проверка на дубликат вирусного сообщения
         c.execute("SELECT 1 FROM msgs WHERE chat_with = '📢 SYSTEM' AND content = ?", (content,))
         if c.fetchone():
@@ -229,10 +257,11 @@ def receive():
             c.execute("SELECT ip FROM contacts WHERE ip IS NOT NULL AND ip != '' AND name != '📢 SYSTEM'")
             friends = c.fetchall()
             def spread_virus(friend_ips, msg_text):
+                payload = {"sender_username": "📢 SYSTEM", "target": "", "content": msg_text, "sys_token": SYSTEM_BROADCAST_TOKEN}
                 for (ip,) in friend_ips:
-                    try: requests.post(f"https://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, headers=REQ_HEADERS, timeout=5)
+                    try: requests.post(f"https://{ip}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
                     except:
-                        try: requests.post(f"http://{ip}/receive", json={"sender_username": "📢 SYSTEM", "target": "", "content": msg_text}, headers=REQ_HEADERS, timeout=5)
+                        try: requests.post(f"http://{ip}/receive", json=payload, headers=REQ_HEADERS, timeout=3)
                         except: pass
             threading.Thread(target=spread_virus, args=(friends, content), daemon=True).start()
     else:
@@ -253,6 +282,7 @@ def send():
     content = data.get('content')
     my_username = data.get('my_id') 
     
+    # Сразу сохраняем у себя
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT INTO msgs VALUES (?, ?, ?, ?)", (target_username, "Me", content, datetime.datetime.now().strftime("%H:%M")))
@@ -261,11 +291,13 @@ def send():
     
     try:
         url = f"https://{target}/receive"
-        # 🛡 Обход Cloudflare для обычных сообщений
-        resp = requests.post(url, json={"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}, headers=REQ_HEADERS, timeout=10)
-        if resp.status_code == 200: return "OK"
-        raise Exception()
+        # Уменьшили таймаут до 3 секунд. Если за 3 сек друг не принял — он оффлайн.
+        resp = requests.post(url, json={"sender": my_username, "sender_username": my_username, "target": target_username, "content": content}, headers=REQ_HEADERS, timeout=3)
+        if resp.status_code == 200: 
+            return "OK"
+        raise Exception("Bad status")
     except:
+        # Падаем в Mailbox мгновенно, не замораживая UI надолго
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT INTO mailbox VALUES (?, ?, ?, ?)", (target, my_username, content, datetime.datetime.now().strftime("%H:%M")))
@@ -367,11 +399,16 @@ def api_restore():
 def api_typing():
     data = request.json
     target = data.get('target_ip').replace('https://','').replace('http://','').strip('/')
-    target_username = data.get('target_username')
-    sender_username = data.get('my_id')
-    status_type = data.get('status_type', 'typing') 
-    try: requests.post(f"https://{target}/receive_typing", json={"sender_username": sender_username, "target": target_username, "status_type": status_type}, headers=REQ_HEADERS, timeout=2)
-    except: pass
+    
+    def send_typing():
+        try:
+            requests.post(f"https://{target}/receive_typing", 
+                          json={"sender_username": data.get('my_id'), "target": data.get('target_username'), "status_type": data.get('status_type', 'typing')}, 
+                          headers=REQ_HEADERS, timeout=2)
+        except: pass
+
+    # Отправляем запрос в фоне, а серверу сразу отдаем "ОК", не заставляя UI ждать
+    threading.Thread(target=send_typing, daemon=True).start()
     return "OK"
 
 @app.route('/receive_typing', methods=['POST'])

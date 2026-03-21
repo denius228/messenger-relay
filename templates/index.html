@@ -184,6 +184,7 @@
             const req = indexedDB.open("SecureChatDB", 2);
             req.onupgradeneeded = e => {
                 const db = e.target.result;
+                // Кэш медиа убран для файлов (чтобы не переполнять ОЗУ), но оставляем для совместимости базы
                 if (!db.objectStoreNames.contains("mediaCache")) db.createObjectStore("mediaCache");
                 if (!db.objectStoreNames.contains("contacts")) db.createObjectStore("contacts", { keyPath: "name" });
                 if (!db.objectStoreNames.contains("chats")) db.createObjectStore("chats"); 
@@ -191,20 +192,6 @@
             req.onsuccess = e => resolve(e.target.result);
             req.onerror = e => reject(e);
         });
-
-        async function saveToCache(url, data) {
-            const db = await dbPromise;
-            db.transaction("mediaCache", "readwrite").objectStore("mediaCache").put(data, url);
-        }
-
-        async function getFromCache(url) {
-            const db = await dbPromise;
-            return new Promise(resolve => {
-                const req = db.transaction("mediaCache", "readonly").objectStore("mediaCache").get(url);
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => resolve(null);
-            });
-        }
 
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -236,20 +223,17 @@
         }
 
         function encrypt(text, key) { 
-                    // Всегда очищаем ключ перед шифрованием, чтобы новые смс были идеальными
-                    const cleanKey = key.replace(/^0x/, '');
-                    return CryptoJS.AES.encrypt(text, cleanKey).toString(); 
-               }
+            const cleanKey = key.replace(/^0x/, '');
+            return CryptoJS.AES.encrypt(text, cleanKey).toString(); 
+        }
         
         function decrypt(cipherText, key) {
             const cleanKey = key.replace(/^0x/, '');
             try { 
-                // 1. Пробуем расшифровать правильным чистым ключом
                 let bytes = CryptoJS.AES.decrypt(cipherText, cleanKey); 
                 let text = bytes.toString(CryptoJS.enc.Utf8);
                 if (text) return text;
                 
-                // 2. СПАСАТЕЛЬНЫЙ КРУГ: Если это старое сообщение от старой версии кода
                 bytes = CryptoJS.AES.decrypt(cipherText, '0x' + cleanKey);
                 text = bytes.toString(CryptoJS.enc.Utf8);
                 if (text) return text;
@@ -286,7 +270,6 @@
             if (myUsername) generateQR();
         }
 
-        // 🦅 ЭПИЗОД 4: ФУНКЦИЯ ИМПОРТА СТАРОЙ ЛИЧНОСТИ (ИСПРАВЛЕННАЯ)
         function importWallet() {
             const uname = document.getElementById('my-username').value.trim();
             if (!uname) return alert("Сначала введите ваш старый никнейм в поле 'My Username' наверху!");
@@ -369,27 +352,17 @@
         function stopScanner() { if(html5QrcodeScanner) { html5QrcodeScanner.stop().then(() => { html5QrcodeScanner.clear(); html5QrcodeScanner = null; }); } }
         function closeModals() { document.getElementById('add-modal').style.display = 'none'; document.getElementById('profile-modal').style.display = 'none'; stopScanner(); }
 
+        // ОБНОВЛЕНО: Используем Blob для отображения медиа (защита от нехватки памяти)
         async function displayMedia(url, elementId) {
             try {
-                let base64Data = await getFromCache(url); 
-                if (base64Data && !base64Data.trim().startsWith("data:")) {
-                    const db = await dbPromise;
-                    db.transaction("mediaCache", "readwrite").objectStore("mediaCache").delete(url);
-                    base64Data = null; 
-                }
-
-                if (!base64Data) {
-                    const response = await fetch(url, { headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }});
-                    if (!response.ok) throw new Error("Файл удален с сервера");
-                    base64Data = await response.text(); 
-                    
-                    // 🛠 ЗАЩИТА: Если видео слишком большое и кэш телефона переполнен - просто игнорируем ошибку кэша и показываем видео напрямую!
-                    try { 
-                        await saveToCache(url, base64Data); 
-                    } catch (cacheErr) { 
-                        console.warn("Кэш браузера переполнен, показываем напрямую."); 
-                    }
-                }
+                const response = await fetch(url, { headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }});
+                if (!response.ok) throw new Error("Файл удален с сервера");
+                
+                // Получаем файл как бинарный Blob (не грузит процессор телефона Base64 строками)
+                const blob = await response.blob();
+                
+                // Создаем временную ссылку в памяти браузера
+                const objectUrl = URL.createObjectURL(blob);
 
                 const el = document.getElementById(elementId);
                 if (el) {
@@ -398,26 +371,21 @@
                         if (chat.scrollHeight - chat.clientHeight <= chat.scrollTop + el.clientHeight + 100) chat.scrollTop = chat.scrollHeight;
                     };
                     
-                    // Страховка на случай сбоя заголовков
-                    if (!base64Data.startsWith("data:")) {
-                        if (url.includes('video')) base64Data = "data:video/webm;base64," + base64Data;
-                        else if (url.includes('audio')) base64Data = "data:audio/webm;base64," + base64Data;
-                    }
-                    el.src = base64Data; 
+                    // Вставляем ссылку напрямую
+                    el.src = objectUrl; 
                 }
                 
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) {
-                    dlBtn.href = base64Data;
+                    dlBtn.href = objectUrl;
                     dlBtn.style.display = 'inline-block';
-                    if (base64Data.startsWith('data:video')) dlBtn.download = 'secure_video.webm';
-                    else if (base64Data.startsWith('data:audio')) dlBtn.download = 'secure_voice.mp4';
-                    else dlBtn.download = 'secure_photo.jpg';
+                    if (blob.type.startsWith('video')) dlBtn.download = 'secure_video.webm';
+                    else if (blob.type.startsWith('audio')) dlBtn.download = 'secure_voice.webm';
+                    else dlBtn.download = 'secure_photo.png';
                 }
             } catch (error) {
                 console.error("Media Error:", error);
                 const el = document.getElementById(elementId);
-                // Если физически файла больше нет (сервер сгорел), честно пишем об этом
                 if (el) el.outerHTML = "<small style='color:#7f91a4;'>[Медиа сгорело вместе со старым сервером 🔥]</small>";
                 const dlBtn = document.getElementById('dl_' + elementId);
                 if (dlBtn) dlBtn.remove();
@@ -490,7 +458,6 @@
             loadContacts();
         }
 
-        // 🦅 ЭПИЗОД 4: ПРОТОКОЛ ФЕНИКС - ИСПРАВЛЕННОЕ ВОССТАНОВЛЕНИЕ ИЗ БЭКАПА ДРУГА
         async function addContact() {
             const currentMyUsername = localStorage.getItem('my_username') || myUsername;
             if (!currentMyUsername) return alert("Сначала сохраните свой профиль!");
@@ -615,29 +582,41 @@
             el.value = '';
         }
 
+        // ОБНОВЛЕНО: Используем FormData для отправки файлов кусками (без зависаний Base64)
         async function uploadMedia(file) {
             if (!file || !activeContact) return;
-            const maxSizeMB = 60; 
-            if (file.size > maxSizeMB * 1024 * 1024) { alert(`🛑 Файл слишком большой! Максимум: ${maxSizeMB} МБ.`); return; }
-            setStatus("Encoding Media...");
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    setStatus("Uploading...");
-                    const rawData = e.target.result;
-                    const resp = await fetch('/api/upload', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ data: rawData }) });
-                    if (!resp.ok) throw new Error("Upload failed");
-                    const { url } = await resp.json(); 
-                    const absoluteUrl = `${window.location.origin}/uploads/${url}`;
-                    await saveToCache(absoluteUrl, rawData);
-                    let prefix = "IMG:";
-                    if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
-                    else if (file.type && file.type.startsWith('video')) prefix = "VIDEO:";
-                    await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
-                    setStatus("Sent!");
-                } catch (err) { alert("Ошибка отправки: " + err.message); setStatus("System Ready"); }
-            };
-            reader.readAsDataURL(file);
+            const maxSizeMB = 100; // Поддержка файлов до 100 МБ
+            if (file.size > maxSizeMB * 1024 * 1024) { 
+                alert(`🛑 Файл слишком большой! Максимум: ${maxSizeMB} МБ.`); 
+                return; 
+            }
+            
+            setStatus("Uploading...");
+
+            const formData = new FormData();
+            formData.append("file", file, file.name || "media.webm");
+
+            try {
+                const resp = await fetch('/api/upload', { 
+                    method: 'POST', 
+                    body: formData 
+                });
+                
+                if (!resp.ok) throw new Error(resp.status === 403 ? "Не авторизован" : "Ошибка сервера");
+                
+                const { url } = await resp.json(); 
+                const absoluteUrl = `${window.location.origin}/uploads/${url}`;
+                
+                let prefix = "IMG:";
+                if (file.type && file.type.startsWith('audio')) prefix = "VOICE:";
+                else if (file.type && file.type.startsWith('video')) prefix = "VIDEO:";
+                
+                await postMsg(encrypt(prefix + absoluteUrl, activeContact.key));
+                setStatus("Sent!");
+            } catch (err) { 
+                alert("Ошибка отправки: " + err.message); 
+                setStatus("System Ready"); 
+            }
         }
 
         async function postMsg(content) {
