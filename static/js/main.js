@@ -809,16 +809,22 @@ const rtcConfig = {
 
 // 1. СЛУШАЕМ СИГНАЛЫ ОТ СЕРВЕРА
 socket.on('webrtc_signal', async (data) => {
-    if (!isAppUnlocked) return; // Если профиль заблокирован - игнорим звонки
+    console.log("📥 [Сигнал из космоса] Пришло:", data); // <--- ДОБАВИЛИ РЕНТГЕН
+    
+    if (!isAppUnlocked) {
+        console.warn("🔒 Профиль заблокирован, игнорируем звонок");
+        return; 
+    }
 
     // Входящий вызов
     if (data.type === 'offer') {
+        console.log("📞 ЭТО ВХОДЯЩИЙ ЗВОНОК ОТ:", data.sender);
         if (peerConnection) return; // Уже говорим с кем-то
         currentCallTarget = data.sender;
         isVideoCall = data.isVideo;
         document.getElementById('caller-name').innerText = currentCallTarget;
         document.getElementById('incoming-call-modal').style.display = 'block';
-        window.incomingOffer = data.payload; // Запоминаем предложение
+        window.incomingOffer = data.payload; 
         try { new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg').play().catch(()=>{}); } catch(e){}
     }
     
