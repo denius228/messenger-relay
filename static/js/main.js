@@ -790,3 +790,173 @@ if (document.getElementById('contact-list')) {
     setInterval(pingTracker, 30000);
     setInterval(pollRelays, 15000); 
 }
+
+// ==========================================
+// 📞 БЛОК ВИДЕО И АУДИО ЗВОНКОВ (WebRTC)
+// ==========================================
+
+let peerConnection;
+let callLocalStream;
+let isVideoCall = false;
+let currentCallTarget = null;
+let isCallMicMuted = false;
+let isCallVideoMuted = false;
+
+// Бесплатные серверы Google для пробития NAT/Роутеров
+const rtcConfig = {
+    iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ]
+};
+
+// 1. СЛУШАЕМ СИГНАЛЫ ОТ СЕРВЕРА
+socket.on('webrtc_signal', async (data) => {
+    if (!isAppUnlocked) return; // Если профиль заблокирован - игнорим звонки
+
+    // Входящий вызов
+    if (data.type === 'offer') {
+        if (peerConnection) return; // Уже говорим с кем-то
+        currentCallTarget = data.sender;
+        isVideoCall = data.isVideo;
+        document.getElementById('caller-name').innerText = currentCallTarget;
+        document.getElementById('incoming-call-modal').style.display = 'block';
+        window.incomingOffer = data.payload; // Запоминаем предложение
+        try { new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg').play().catch(()=>{}); } catch(e){}
+    }
+    
+    // Собеседник ответил
+    else if (data.type === 'answer') {
+        if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
+        document.getElementById('call-status').innerText = "На связи ⏱";
+    }
+    
+    // Собеседник прислал сетевые координаты (ICE)
+    else if (data.type === 'ice-candidate') {
+        if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload));
+    }
+    
+    // Собеседник сбросил/завершил звонок
+    else if (data.type === 'end') {
+        closeCallUI();
+    }
+});
+
+// 2. ИСХОДЯЩИЙ ЗВОНОК (КНОПКА)
+async function startCall(videoEnabled) {
+    if (!activeContact) return alert("Сначала выберите контакт для звонка!");
+    if (activeContact.username === "📢 SYSTEM") return;
+    
+    currentCallTarget = activeContact.username;
+    isVideoCall = videoEnabled;
+    await setupCallUI_and_Stream();
+    
+    document.getElementById('call-status').innerText = "Звоним...";
+
+    peerConnection = new RTCPeerConnection(rtcConfig);
+    setupPeerConnectionEvents();
+    
+    // Добавляем наши треки (видео/звук) в соединение
+    callLocalStream.getTracks().forEach(track => peerConnection.addTrack(track, callLocalStream));
+    
+    // Создаем предложение (Offer)
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    
+    // Отправляем сигнал Бобу
+    socket.emit('webrtc_signal', { target: currentCallTarget, sender: myUsername, type: 'offer', payload: offer, isVideo: isVideoCall });
+}
+
+// 3. ОТВЕТИТЬ НА ВХОДЯЩИЙ ЗВОНОК
+async function acceptCall() {
+    document.getElementById('incoming-call-modal').style.display = 'none';
+    await setupCallUI_and_Stream();
+    
+    document.getElementById('call-status').innerText = "Соединение...";
+
+    peerConnection = new RTCPeerConnection(rtcConfig);
+    setupPeerConnectionEvents();
+    
+    callLocalStream.getTracks().forEach(track => peerConnection.addTrack(track, callLocalStream));
+    
+    // Принимаем предложение Алисы
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(window.incomingOffer));
+    
+    // Создаем ответ (Answer)
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    
+    // Отправляем ответ Алисе
+    socket.emit('webrtc_signal', { target: currentCallTarget, sender: myUsername, type: 'answer', payload: answer });
+}
+
+// 4. СБРОСИТЬ ВХОДЯЩИЙ
+function rejectCall() {
+    document.getElementById('incoming-call-modal').style.display = 'none';
+    socket.emit('webrtc_signal', { target: currentCallTarget, sender: myUsername, type: 'end' });
+    currentCallTarget = null;
+}
+
+// 5. ЗАВЕРШИТЬ ТЕКУЩИЙ ЗВОНОК (КЛАСТЬ ТРУБКУ)
+function endCall() {
+    if (currentCallTarget) socket.emit('webrtc_signal', { target: currentCallTarget, sender: myUsername, type: 'end' });
+    closeCallUI();
+}
+
+// ==========================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ПОД КАПОТОМ)
+// ==========================================
+
+async function setupCallUI_and_Stream() {
+    document.getElementById('call-screen').style.display = 'flex';
+    try {
+        callLocalStream = await navigator.mediaDevices.getUserMedia({ 
+            video: isVideoCall ? { facingMode: "user", width: {ideal: 1280}, height: {ideal: 720} } : false, 
+            audio: { echoCancellation: true, noiseSuppression: true } 
+        });
+        document.getElementById('local-video').srcObject = callLocalStream;
+        
+        // Меняем иконки кнопок, если это аудиозвонок
+        document.getElementById('toggle-cam-btn').style.opacity = isVideoCall ? '1' : '0.3';
+    } catch(e) { alert("Ошибка доступа к камере/микрофону!"); closeCallUI(); }
+}
+
+function setupPeerConnectionEvents() {
+    // Отправляем свои сетевые координаты собеседнику
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            socket.emit('webrtc_signal', { target: currentCallTarget, sender: myUsername, type: 'ice-candidate', payload: event.candidate });
+        }
+    };
+    
+    // Получаем видео/звук от собеседника!
+    peerConnection.ontrack = event => {
+        const remoteVideo = document.getElementById('remote-video');
+        if (remoteVideo.srcObject !== event.streams[0]) {
+            remoteVideo.srcObject = event.streams[0];
+        }
+    };
+}
+
+function closeCallUI() {
+    document.getElementById('call-screen').style.display = 'none';
+    document.getElementById('incoming-call-modal').style.display = 'none';
+    if (peerConnection) { peerConnection.close(); peerConnection = null; }
+    if (callLocalStream) { callLocalStream.getTracks().forEach(t => t.stop()); callLocalStream = null; }
+    currentCallTarget = null;
+    isCallMicMuted = false;
+    isCallVideoMuted = false;
+}
+
+// Кнопка Мьют микрофона
+function toggleCallMic() {
+    if (!callLocalStream) return;
+    isCallMicMuted = !isCallMicMuted;
+    callLocalStream.getAudioTracks().forEach(t => t.enabled = !isCallMicMuted);
+    document.getElementById('toggle-mic-btn').style.background = isCallMicMuted ? '#ff4d4d' : '#2b5278';
+}
+
+// Кнопка Выключения камеры
+function toggleCallVideo() {
+    if (!callLocalStream || !isVideoCall) return;
+    isCallVideoMuted = !isCallVideoMuted;
+    callLocalStream.getVideoTracks().forEach(t => t.enabled = !isCallVideoMuted);
+    document.getElementById('toggle-cam-btn').style.background = isCallVideoMuted ? '#ff4d4d' : '#2b5278';
+}

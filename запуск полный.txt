@@ -1,0 +1,97 @@
+Открой файл: nano app.py          
+
+set GODMODE_PASSWORD=goger1234           РЕЖИМ БОГА ХОТЬ НА ПК ХОТЬ НА VPS   ЭТО В ВИНДОУС
+python app.py                     
+
+export GODMODE_PASSWORD="goger1234"        РЕЖИМ БОГА НА ЛИНУКС НА СЕРВЕРЕ ЕГО ИСПОЛЬЗОВАТЬ ТАМ ЛИНУКС
+python3 app.py
+
+
+# 1. Скачивает твой проект
+git clone https://github.com/denius228/messenger-relay.git
+cd messenger-relay
+
+# 2. Указывает свой домен (например, bob.ru)
+export DOMAIN_NAME=bob.ru
+
+# 3. Запускает ВЕСЬ проект одной кнопкой в фоновом режиме!
+docker-compose up -d
+
+cd C:\Users\denko\Desktop\messenger
+
+python3 app.py          запуск на каждом сервере 
+
+git reset --hard     сброс ручных изменений на сервере чтоб скачать обновление если не работает git pull
+
+sudo systemctl restart vpschat      ПЕРЕЗАПУСК СИСТЕМЫ
+
+На телефоне (Termux) 
+
+cd messenger-relay
+
+pkill python      «убить все процессы питона»:
+
+rm messages.db app.py          Удали старые файлы:
+
+rm db_data/messages.db                 удалить базу данных
+
+python app.py           На телефоне (Termux) запусти вручную: 
+
+
+🚀 КАК ОБНОВИТЬ И ПРОТЕСТИРОВАТЬ:
+Ты уже закрытыми глазами это делаешь:
+На ПК: git add ., git commit -m "Fix mobile audio playback final", git push
+На VPS (в screen): Ctrl+C, git pull, python3 app.py, Ctrl+A, D.
+
+sudo docker compose down  остановка докстер
+
+git pull   скачиваем на сервер с гитхаб
+
+sudo docker compose build messenger
+sudo docker compose up -d messenger
+sudo docker compose down -v             УДАЛИТЬ БД
+sudo rm -rf db_data                  ТОЖЕ ДЛЯ УДАЛЕНИЯ ПО ПОРЯДКУ 
+sudo docker compose up -d       ЗАПУСК 
+
+На компьютере (VPS)   
+
+ssh root@95.163.153.3
+
+H8t02SAsNXHN
+
+cd messenger-relay
+
+cloudflared tunnel --url http://127.0.0.1:5000     генерировать ссылку для входа мессенджер 
+
+git pull       скачка с гитХАБА   python3 app.py  сразу запуск
+
+nano templates/index.html             
+
+sudo systemctl stop vpschat           Останови службу:
+
+sudo pkill python3                      На всякий случай убедись, что ничего не «висит»:
+
+rm messages.db app.py                 Удали файлы (убедись, что ты находишься в папке /root или там, где создавал файл):
+
+rm messages.db                 удалить базу данных
+
+sudo systemctl start vpschat             На VPS запусти через службу:
+
+
+
+
+Как настроить связь сейчас (пошагово):
+1. На компьютере (открой ссылку VPS):
+Зайди по адресу: https://ground-drain-straight-high.trycloudflare.com
+Нажми + CONTACT
+Name: Мой Телефон
+URL: 5f200bbcbf19c8e2-46-226-161-187.serveousercontent.com (копируй без https://)
+Key: 777 (любой общий ключ)
+Нажми SAVE.
+2. На телефоне (открой ссылку Serveo):  ssh -R 80:localhost:5000 serveo.net   чтоб получить ссылку для входа 
+Зайди по адресу: https://5f200bbcbf19c8e2-46-226-161-187.serveousercontent.com
+Нажми + CONTACT
+Name: Мой Комп
+URL: ground-drain-straight-high.trycloudflare.com (копируй без https://)
+Key: 777 (тот же самый ключ)
+Нажми SAVE.

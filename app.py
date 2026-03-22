@@ -239,5 +239,17 @@ def receive_typing():
     socketio.emit('user_typing', {'sender': request.json.get('sender_username'), 'status_type': request.json.get('status_type', 'typing')}, room=request.json.get('target'))
     return "OK"
 
+# --- WEBRTC СИГНАЛЬНЫЙ СЕРВЕР (ЗВОНКИ) ---
+@socketio.on('webrtc_signal')
+def handle_webrtc_signal(data):
+    """
+    Универсальный ретранслятор сигналов для звонков.
+    Алиса шлет сигнал (Offer/Answer/ICE), сервер не глядя перекидывает его Бобу.
+    """
+    target_username = data.get('target')
+    if target_username:
+        # Пересылаем сигнал в комнату (room) нужного пользователя
+        socketio.emit('webrtc_signal', data, room=target_username)
+
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

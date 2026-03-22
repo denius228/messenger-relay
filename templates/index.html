@@ -32,6 +32,7 @@
             </form>
         </div>
     {% else %}
+        <!-- ЭКРАН БЛОКИРОВКИ WEB3 -->
         <div id="web3-auth-modal"></div>
 
         <div class="header">
@@ -50,20 +51,28 @@
             <video id="video-preview" autoplay muted playsinline></video>
         </div>
 
+        <!-- ПАНЕЛЬ УПРАВЛЕНИЯ -->
         <div class="controls" id="main-controls">
             <button onclick="document.getElementById('file-input').click()">+</button>
             <input type="file" id="file-input" style="display:none" onchange="uploadMedia(this.files[0])">
             <div class="input-area">
+                
+                <!-- 📞 НОВЫЕ КНОПКИ ЗВОНКОВ -->
+                <button onclick="startCall(false)" title="Аудиозвонок" style="font-size: 18px; margin-right: 5px;">📞</button>
+                <button onclick="startCall(true)" title="Видеозвонок" style="font-size: 18px; margin-right: 10px;">📹</button>
+
                 <input type="text" id="content" placeholder="Message..." 
                     oninput="notifyTyping('typing')" 
                     onkeypress="if(event.key === 'Enter') sendText()" 
                     onfocus="setTimeout(() => document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight, 300)">
+                
                 <button id="video-btn" onclick="toggleVideo()" style="margin-right: 5px;">📷</button>
                 <button id="voice-btn" onclick="toggleVoice()">🎤</button>
             </div>
             <button onclick="sendText()">➤</button>
         </div>
 
+        <!-- МОДАЛКИ (КОНТАКТЫ И ПРОФИЛЬ) -->
         <div id="add-modal" class="modal">
             <h3>Add Contact</h3>
             <button onclick="startScanner()" style="background:#2b5278; color:white; padding:10px; border-radius:10px; width:100%; margin-bottom:15px; font-size:14px; border:none;">📷 SCAN QR CODE</button>
@@ -87,7 +96,39 @@
             </div>
             <button onclick="closeModals()" style="width:100%; color:gray; font-size:14px; background:none; border:none; margin-top:15px;">ЗАКРЫТЬ</button>
         </div>
-        
+
+        <!-- ========================================== -->
+        <!-- 📞 ЭКРАНЫ ДЛЯ АУДИО И ВИДЕО ЗВОНКОВ (WebRTC) -->
+        <!-- ========================================== -->
+
+        <!-- ЭКРАН ВХОДЯЩЕГО ЗВОНКА (ВСПЛЫВАЮЩЕЕ ОКНО) -->
+        <div id="incoming-call-modal" class="modal" style="border-color: #4CAF50; z-index: 10000; padding: 30px;">
+            <h3 id="caller-name" style="color: #4CAF50; margin-bottom: 5px; font-size: 22px;">@username</h3>
+            <p style="color: #7f91a4; font-size: 14px; margin-top: 0;">Входящий звонок...</p>
+            <div style="display: flex; gap: 25px; justify-content: center; margin-top: 25px;">
+                <button onclick="acceptCall()" style="background: #4CAF50; color: white; border-radius: 50%; width: 60px; height: 60px; font-size: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);">📞</button>
+                <button onclick="rejectCall()" style="background: #ff4d4d; color: white; border-radius: 50%; width: 60px; height: 60px; font-size: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(255, 77, 77, 0.4);">✖</button>
+            </div>
+        </div>
+
+        <!-- АКТИВНЫЙ ЭКРАН ЗВОНКА (ПОЛНОЭКРАННЫЙ) -->
+        <div id="call-screen" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#0e1621; z-index:9999; flex-direction:column;">
+            <div style="flex:1; position:relative; background:black;">
+                <!-- Видео собеседника (на весь экран) -->
+                <video id="remote-video" autoplay playsinline style="width:100%; height:100%; object-fit:cover;"></video>
+                
+                <!-- Твое видео (в углу) -->
+                <video id="local-video" autoplay muted playsinline style="position:absolute; bottom:20px; right:20px; width:100px; height:150px; object-fit:cover; border-radius:15px; border:2px solid #40a7e3; box-shadow:0 4px 15px rgba(0,0,0,0.8); transform: scaleX(-1); background: #17212b;"></video>
+                
+                <div id="call-status" style="position:absolute; top:30px; width:100%; text-align:center; color:white; font-weight:bold; text-shadow:1px 1px 5px black; font-size: 16px; letter-spacing: 1px;">Соединение...</div>
+            </div>
+            <div style="padding:25px; background:#17212b; display:flex; justify-content:center; gap:30px; flex-shrink:0; border-top: 1px solid #111;">
+                <button id="toggle-mic-btn" onclick="toggleCallMic()" style="background:#2b5278; color:white; border-radius:50%; width:65px; height:65px; font-size:26px; display: flex; align-items: center; justify-content: center; transition: 0.2s;">🎙️</button>
+                <button id="toggle-cam-btn" onclick="toggleCallVideo()" style="background:#2b5278; color:white; border-radius:50%; width:65px; height:65px; font-size:26px; display: flex; align-items: center; justify-content: center; transition: 0.2s;">📹</button>
+                <button onclick="endCall()" style="background:#ff4d4d; color:white; border-radius:50%; width:65px; height:65px; font-size:26px; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✖</button>
+            </div>
+        </div>
+
         <!-- ПОДКЛЮЧАЕМ НАШ СКРИПТ В САМОМ КОНЦЕ -->
         <script src="/static/js/main.js"></script>
     {% endif %}
