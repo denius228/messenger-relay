@@ -24,10 +24,13 @@ let typingTimeout = null, lastTypingTime = 0;
 
 // 🔥 ИСПРАВЛЕНИЕ: Автоматическое возвращение в свою комнату при обрыве связи
 socket.on('connect', () => {
-    if (myUsername) {
-        socket.emit('join', { username: myUsername });
-        console.log("🔄 Успешно переподключились как:", myUsername);
-    }
+    // Ждем полсекунды, чтобы переменная myUsername успела загрузиться из памяти
+    setTimeout(() => {
+        if (myUsername) {
+            socket.emit('join', { username: myUsername });
+            console.log("🔄 Успешно зашли в комнату:", myUsername);
+        }
+    }, 500);
 });
 
 // 🔥 ДОБАВЛЕНО: Обработка отправителя в сокетах

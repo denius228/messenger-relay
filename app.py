@@ -244,12 +244,10 @@ def receive_typing():
 def handle_webrtc_signal(data):
     target_username = data.get('target')
     sender = data.get('sender')
-    signal_type = data.get('type')
     
-    print(f"📞 [WebRTC] БРОАДКАСТ сигнала '{signal_type}' от {sender} для {target_username}")
-    
-    # 🔥 ИЗМЕНЕНИЕ: Убрали `room=`, теперь сервер шлет звонок АБСОЛЮТНО ВСЕМ
-    socketio.emit('webrtc_signal', data)
+    # Снова шлем ТОЛЬКО в нужную комнату, а не всем подряд
+    if target_username:
+        socketio.emit('webrtc_signal', data, room=target_username)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
