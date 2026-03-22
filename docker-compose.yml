@@ -9,7 +9,7 @@ services:
       - ./uploads:/app/uploads
       - db_data:/app/db_data # Создаем новую, вечную папку для базы данных
     ports:
-      - "5000:5000"
+      - "80:5000"
 
   caddy:
     image: caddy:2.7-alpine
