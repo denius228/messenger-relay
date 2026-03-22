@@ -916,17 +916,20 @@ function endCall() {
 async function setupCallUI_and_Stream() {
     document.getElementById('call-screen').style.display = 'flex';
     try {
+        // Убрали facingMode, чтобы ПК не ругался на отсутствие "фронталки"
         callLocalStream = await navigator.mediaDevices.getUserMedia({ 
-            video: isVideoCall ? { facingMode: "user", width: {ideal: 1280}, height: {ideal: 720} } : false, 
-            audio: { echoCancellation: true, noiseSuppression: true } 
+            video: isVideoCall ? { width: {ideal: 1280}, height: {ideal: 720} } : false, 
+            audio: true // Упростили запрос аудио, чтобы ПК гарантированно дал микрофон
         });
         document.getElementById('local-video').srcObject = callLocalStream;
         document.getElementById('toggle-cam-btn').style.opacity = isVideoCall ? '1' : '0.3';
-        return true; // Камера и микрофон захвачены успешно!
+        return true; 
     } catch(e) { 
-        alert("⚠️ Ошибка железа!\nБраузер не смог найти или получить доступ к микрофону/камере.\n\nПроверьте разрешения в адресной строке!"); 
+        // Теперь мы увидим ТОЧНУЮ причину ошибки!
+        console.error("Media Error:", e);
+        alert(`⚠️ Ошибка железа!\nБраузер отклонил запрос: ${e.message}\n\nПроверьте, подключен ли микрофон/камера и разрешен ли доступ в адресной строке.`); 
         closeCallUI(); 
-        return false; // Запрещаем звонок!
+        return false; 
     }
 }
 
