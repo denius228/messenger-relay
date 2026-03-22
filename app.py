@@ -242,13 +242,14 @@ def receive_typing():
 # --- WEBRTC СИГНАЛЬНЫЙ СЕРВЕР (ЗВОНКИ) ---
 @socketio.on('webrtc_signal')
 def handle_webrtc_signal(data):
-    """
-    Универсальный ретранслятор сигналов для звонков.
-    Алиса шлет сигнал (Offer/Answer/ICE), сервер не глядя перекидывает его Бобу.
-    """
     target_username = data.get('target')
+    sender = data.get('sender')
+    signal_type = data.get('type')
+    
+    # 🔥 ЭТА СТРОЧКА БУДЕТ ПИСАТЬ ЗВОНОК В КОНСОЛЬ
+    print(f"📞 [WebRTC] Сигнал '{signal_type}' от {sender} для {target_username}")
+    
     if target_username:
-        # Пересылаем сигнал в комнату (room) нужного пользователя
         socketio.emit('webrtc_signal', data, room=target_username)
 
 if __name__ == '__main__':
