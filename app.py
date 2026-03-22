@@ -244,8 +244,12 @@ def receive_typing():
 def handle_webrtc_signal(data):
     target_username = data.get('target')
     sender = data.get('sender')
+    signal_type = data.get('type')
     
-    # Снова шлем ТОЛЬКО в нужную комнату, а не всем подряд
+    # Пишем чистый лог
+    print(f"📞 [WebRTC] Сигнал '{signal_type}' от {sender} для {target_username}")
+    
+    # Отправляем ТОЛЬКО в нужную комнату (никаких броадкастов!)
     if target_username:
         socketio.emit('webrtc_signal', data, room=target_username)
 

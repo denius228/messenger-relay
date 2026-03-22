@@ -796,11 +796,31 @@ document.addEventListener("visibilitychange", function() {
 });
 
 // ИНИЦИАЛИЗАЦИЯ
+// ИНИЦИАЛИЗАЦИЯ
 if (document.getElementById('contact-list')) {
     checkWeb3Identity(); 
+    
+    // Пингуем трекер
     setInterval(pingTracker, 30000);
-    setInterval(pollRelays, 15000); 
+    
+    // Проверяем почту И жестко напоминаем серверу нашу комнату
+    setInterval(() => {
+        pollRelays();
+        if (myUsername && isAppUnlocked) {
+            socket.emit('join', { username: myUsername });
+        }
+    }, 15000);
 }
+
+// Принудительный вход в комнату при сворачивании/разворачивании браузера
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && isAppUnlocked && myUsername) {
+        socket.emit('join', { username: myUsername });
+        isUpdatingMessages = false; 
+        loadMessages();
+        pingTracker(); 
+    }
+});
 
 // ==========================================
 // 📞 БЛОК ВИДЕО И АУДИО ЗВОНКОВ (WebRTC)
