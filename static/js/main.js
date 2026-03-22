@@ -817,37 +817,41 @@ const rtcConfig = {
 
 // 1. СЛУШАЕМ СИГНАЛЫ ОТ СЕРВЕРА
 socket.on('webrtc_signal', async (data) => {
-    console.log("📥 [Сигнал из космоса] Пришло:", data); // <--- ДОБАВИЛИ РЕНТГЕН
     
-    if (!isAppUnlocked) {
-        console.warn("🔒 Профиль заблокирован, игнорируем звонок");
-        return; 
+    // 🔥 СИРЕНА №1: Проверяем, долетает ли сигнал вообще до телефона
+    if (data.type === 'offer') {
+        alert("ВХОДЯЩИЙ ЗВОНОК ДОШЕЛ ДО ТЕЛЕФОНА ОТ: " + data.sender);
     }
 
-    // Входящий вызов
+    if (!isAppUnlocked) return; 
+
     if (data.type === 'offer') {
-        console.log("📞 ЭТО ВХОДЯЩИЙ ЗВОНОК ОТ:", data.sender);
-        if (peerConnection) return; // Уже говорим с кем-то
-        currentCallTarget = data.sender;
-        isVideoCall = data.isVideo;
-        document.getElementById('caller-name').innerText = currentCallTarget;
-        document.getElementById('incoming-call-modal').style.display = 'block';
-        window.incomingOffer = data.payload; 
-        try { new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg').play().catch(()=>{}); } catch(e){}
+        try {
+            if (peerConnection) return; 
+            currentCallTarget = data.sender;
+            isVideoCall = data.isVideo;
+            
+            // 🔥 СИРЕНА №2: Ловим скрытые ошибки HTML
+            document.getElementById('caller-name').innerText = currentCallTarget;
+            document.getElementById('incoming-call-modal').style.display = 'block';
+            
+            window.incomingOffer = data.payload; 
+            try { new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg').play().catch(()=>{}); } catch(e){}
+        } catch (err) {
+            // Если ты забыл обновить index.html, эта ошибка вылезет на экран!
+            alert("КРИТИЧЕСКАЯ ОШИБКА ИНТЕРФЕЙСА:\n" + err.message);
+        }
     }
     
-    // Собеседник ответил
     else if (data.type === 'answer') {
         if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
         document.getElementById('call-status').innerText = "На связи ⏱";
     }
     
-    // Собеседник прислал сетевые координаты (ICE)
     else if (data.type === 'ice-candidate') {
         if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload));
     }
     
-    // Собеседник сбросил/завершил звонок
     else if (data.type === 'end') {
         closeCallUI();
     }
