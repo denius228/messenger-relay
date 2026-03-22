@@ -22,6 +22,14 @@ function saveUnreadCounts() {
 const socket = io(); 
 let typingTimeout = null, lastTypingTime = 0;
 
+// 🔥 ИСПРАВЛЕНИЕ: Автоматическое возвращение в свою комнату при обрыве связи
+socket.on('connect', () => {
+    if (myUsername) {
+        socket.emit('join', { username: myUsername });
+        console.log("🔄 Успешно переподключились как:", myUsername);
+    }
+});
+
 // 🔥 ДОБАВЛЕНО: Обработка отправителя в сокетах
 socket.on('new_message', function(data) {
     isUpdatingMessages = false; 
