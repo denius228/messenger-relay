@@ -841,6 +841,9 @@ const rtcConfig = {
 
 // 1. СЛУШАЕМ СИГНАЛЫ ОТ СЕРВЕРА
 socket.on('webrtc_signal', async (data) => {
+    // 🔥 ИСПРАВЛЕНИЕ: Игнорируем звонки, которые адресованы не нам
+    if (data.target !== myUsername) return;
+    
     if (!isAppUnlocked) return; 
 
     if (data.type === 'offer') {

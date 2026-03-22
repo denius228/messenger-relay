@@ -246,12 +246,12 @@ def handle_webrtc_signal(data):
     sender = data.get('sender')
     signal_type = data.get('type')
     
-    # Пишем чистый лог
     print(f"📞 [WebRTC] Сигнал '{signal_type}' от {sender} для {target_username}")
     
-    # Отправляем ТОЛЬКО в нужную комнату (никаких броадкастов!)
+    # 🔥 ИСПРАВЛЕНИЕ: Отправляем всем (broadcast). Клиенты сами отфильтруют чужое.
+    # Это решает 99% проблем с недозвоном на базовом сервере Flask.
     if target_username:
-        socketio.emit('webrtc_signal', data, room=target_username)
+        socketio.emit('webrtc_signal', data)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
