@@ -832,6 +832,7 @@ let isVideoCall = false;
 let currentCallTarget = null;
 let isCallMicMuted = false;
 let isCallVideoMuted = false;
+let pendingIceCandidates = []; // 🔥 ДОБАВЛЕНО: Очередь пакетов, пока трубку не взяли
 
 // Бесплатные серверы Google для пробития NAT/Роутеров
 const rtcConfig = {
@@ -840,12 +841,6 @@ const rtcConfig = {
 
 // 1. СЛУШАЕМ СИГНАЛЫ ОТ СЕРВЕРА
 socket.on('webrtc_signal', async (data) => {
-    
-    // 🔥 СИРЕНА №1: Проверяем, долетает ли сигнал вообще до телефона
-    if (data.type === 'offer') {
-        alert("ВХОДЯЩИЙ ЗВОНОК ДОШЕЛ ДО ТЕЛЕФОНА ОТ: " + data.sender);
-    }
-
     if (!isAppUnlocked) return; 
 
     if (data.type === 'offer') {
@@ -854,27 +849,36 @@ socket.on('webrtc_signal', async (data) => {
             currentCallTarget = data.sender;
             isVideoCall = data.isVideo;
             
-            // 🔥 СИРЕНА №2: Ловим скрытые ошибки HTML
             document.getElementById('caller-name').innerText = currentCallTarget;
             document.getElementById('incoming-call-modal').style.display = 'block';
             
             window.incomingOffer = data.payload; 
+            pendingIceCandidates = []; // 🔥 Очищаем старые пакеты
             try { new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg').play().catch(()=>{}); } catch(e){}
         } catch (err) {
-            // Если ты забыл обновить index.html, эта ошибка вылезет на экран!
             alert("КРИТИЧЕСКАЯ ОШИБКА ИНТЕРФЕЙСА:\n" + err.message);
         }
     }
-    
     else if (data.type === 'answer') {
-        if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
-        document.getElementById('call-status').innerText = "На связи ⏱";
+        if (peerConnection) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
+            document.getElementById('call-status').innerText = "На связи ⏱";
+            
+            // 🔥 Добавляем пакеты, если они прилетели быстрее ответа
+            for (let candidate of pendingIceCandidates) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e=>console.error(e));
+            }
+            pendingIceCandidates = [];
+        }
     }
-    
     else if (data.type === 'ice-candidate') {
-        if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload));
+        // 🔥 ИСПРАВЛЕНИЕ: Если соединение готово - добавляем, иначе копим в очередь
+        if (peerConnection && peerConnection.remoteDescription) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload)).catch(e=>console.error(e));
+        } else {
+            pendingIceCandidates.push(data.payload); 
+        }
     }
-    
     else if (data.type === 'end') {
         closeCallUI();
     }
