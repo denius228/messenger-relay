@@ -846,7 +846,10 @@ async function startCall(videoEnabled) {
     
     currentCallTarget = activeContact.username;
     isVideoCall = videoEnabled;
-    await setupCallUI_and_Stream();
+    
+    // 🔥 ИСПРАВЛЕНИЕ: Ждем успешного запуска камеры. Если ошибка - прерываем звонок!
+    const isMediaReady = await setupCallUI_and_Stream();
+    if (!isMediaReady) return; 
     
     document.getElementById('call-status').innerText = "Звоним...";
 
@@ -867,7 +870,13 @@ async function startCall(videoEnabled) {
 // 3. ОТВЕТИТЬ НА ВХОДЯЩИЙ ЗВОНОК
 async function acceptCall() {
     document.getElementById('incoming-call-modal').style.display = 'none';
-    await setupCallUI_and_Stream();
+    
+    // 🔥 ИСПРАВЛЕНИЕ: Ждем успешного запуска камеры при ответе!
+    const isMediaReady = await setupCallUI_and_Stream();
+    if (!isMediaReady) {
+        socket.emit('webrtc_signal', { target: currentCallTarget, sender: myUsername, type: 'end' });
+        return;
+    }
     
     document.getElementById('call-status').innerText = "Соединение...";
 
@@ -912,10 +921,13 @@ async function setupCallUI_and_Stream() {
             audio: { echoCancellation: true, noiseSuppression: true } 
         });
         document.getElementById('local-video').srcObject = callLocalStream;
-        
-        // Меняем иконки кнопок, если это аудиозвонок
         document.getElementById('toggle-cam-btn').style.opacity = isVideoCall ? '1' : '0.3';
-    } catch(e) { alert("Ошибка доступа к камере/микрофону!"); closeCallUI(); }
+        return true; // Камера и микрофон захвачены успешно!
+    } catch(e) { 
+        alert("⚠️ Ошибка железа!\nБраузер не смог найти или получить доступ к микрофону/камере.\n\nПроверьте разрешения в адресной строке!"); 
+        closeCallUI(); 
+        return false; // Запрещаем звонок!
+    }
 }
 
 function setupPeerConnectionEvents() {
